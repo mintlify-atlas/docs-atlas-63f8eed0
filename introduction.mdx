@@ -1,5 +1,5 @@
 ---
-title: "Anatomy: Isometric Machine Figures for AI Agents"
+title: "Anatomy: Isometric SVG Machine Figures for AI Agents"
 sidebarTitle: "Introduction"
 description: "An agent skill for Claude Code, OpenCode, and Codex that explains technical ideas by building them as crafted, interactive isometric SVG machine figures."
 ---
@@ -19,6 +19,8 @@ Earlier figures illustrate what this means in practice:
 | Seven render targets with different bytes per texel | A chest of seven drawers, each as deep as its bytes |
 | A separable blur (49 × 49 taps vs 49 + 49) | A bed-of-nails stamp beside two combs on rails |
 | A spring that presses and leans | A test rig with springs, a probe, and a dial gauge |
+| A height profile | A profile (contour) gauge pressed against the edge |
+| Light that depends on facing | A small photo studio — key and fill lamps around a turntable |
 
 The reader understands the idea because they recognise the machine. Every number the figure shows comes from the same small model that moves its parts — the readout, the motion, and the caption are all grounded in the real parameters you supply.
 
@@ -64,7 +66,7 @@ Some effects cannot be rendered with vector lines alone. For fire, exhaust plume
 ### 3D (beta)
 
 <Note>
-  The 3D mode is beta. It is proved on its example (`turning-dial`) and one test figure, not yet on a production figure. A small 3D figure runs at 60 fps; the 380-part stress figure measured about 20 fps at 1440 px wide and 13–15 fps on a throttled phone profile.
+  The 3D mode is beta. It is proved on its example (`turning-dial`) and one test figure, not yet on a production figure. A small 3D figure runs at 60 fps; the 380-part stress hand measured about 20 fps at 1440 px wide and 13–15 fps on a throttled phone profile, on a heavily loaded machine.
 </Note>
 
 The 3D mode is for parts that move in true depth: a combination dial that spins, a robot finger that flexes, a component that detaches and falls. Each frame, convex kit primitives are re-projected and re-shaded by the kit's own rules. The rest of the figure — the bench, the stand, the surrounding objects — stays static SVG art. Example: `turning-dial`.
@@ -97,7 +99,6 @@ Understanding what Anatomy is not built for will save time:
 - **Draws machines, instruments, tools, and furniture.** Not people and not exact maps. An idea that has no mechanism to build around will produce a weaker figure.
 - **Slow by design.** A figure takes a long session: parts list, geometry, audit, and close-ups of every joint in both themes. The Raptor engine example takes a few minutes to build; a full 3D orbit audit takes 15–20 minutes for 30 parts.
 - **Shaders need WebGL.** Without it the SVG reads, and under reduced motion every figure holds still.
-- **Never copies a reference image.** The skill takes inspiration from the finish of a real object, never from a specific image's layout.
 
 ## What the skill produces
 

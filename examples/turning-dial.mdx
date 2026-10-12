@@ -10,7 +10,7 @@ The turning-dial example is Anatomy's demonstration of the optional 3D mode. It 
 
 In a normal SVG figure, every part is painted once at build time. In a 3D figure, the parts that belong to a turn group are reprojected and reshaded on every animation frame. A turn by `θ` is equivalent to the kit drawing at azimuth `a − θ`: the same four-tone shading rules apply, but the facing vectors rotate with the part.
 
-```
+```text
 A turn by θ == kit drawing at azimuth (a − θ)
 ```
 
@@ -23,10 +23,10 @@ The ~90 live parts use metal material remaps that shift the tone ramp without ch
 | Material | Where used |
 |---|---|
 | Gold | Robot hand palm and knuckle covers |
-| Chrome | Dial face and bezel |
-| Steel | Hinge pins |
-| Gunmetal | Joint discs |
-| Brass | LED housing |
+| Chrome | Dial hub, joint discs, ball joint and piston rod |
+| Steel | Dial body and bezel, hose |
+| Gunmetal | Connector body, saddles, piston and junction rings |
+| Brass | Pinion and wheel, cable ports, piston gland and ferrules |
 
 Materials are declared per-part in `turning(P, { recorder })` via `turn-build.mjs`. Tones still come from facing angle; the material only remaps the ramp values.
 
@@ -107,10 +107,14 @@ import * as TA from "../../kit/turn-audit.mjs";
 import { turnScript, glScript } from "../../scripts/inline-kit.mjs";
 
 const T = turning(P, { recorder: R });
-// ... declare turn groups, add convex parts with materials ...
-const page = T.build({ theme, width: WIDTH, height: HEIGHT });
+// declare turn groups: T.group("dial", { turn: { pivot: [0, 0] } })
+// declare hinge groups: T.group("f1.mcp", { parent: dial, hinge: { point, axis, range } })
+// add parts with: T.round(...), T.prism(...), T.lathe(...), T.ball(...)
+const out = T.build({ statics: R.items, poses, verify });
+// assemble the page separately:
+// const page = k.pageHtml({ title, theme, body, script: turnScript() + glScript() + LIVE });
 ```
 
-`turning(P, { recorder })` returns a builder `T`. Call `T.turn`, `T.hinge`, `T.slide` and `T.free` to declare groups; `T.part` to add convex parts with materials. `T.build` writes the HTML page with the turn runtime and WebGL LED shader inlined.
+`turning(P, { recorder })` returns a builder `T`. Call `T.group(name, { turn: ... })` to declare a turn group and `T.group(name, { hinge: ... })` to declare a hinge group. Add convex parts with `T.round`, `T.prism`, `T.lathe`, `T.ball` and `T.tube`. `T.build({ statics, poses, verify })` returns an output object with `out.data`, `out.css`, `out.report` and helper methods; the HTML page is assembled separately with `k.pageHtml`.
 
 The 3D runtime itself is `kit/turn.mjs`: `TURN.mount` attaches to a container, `TURN.cover` masks the front canvas, and `TURN.poseUniforms` pushes the current pose into the WebGL shader.

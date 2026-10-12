@@ -1,7 +1,7 @@
 ---
-title: "Adding WebGL shaders to isometric Anatomy figures"
+title: "WebGL shaders in Anatomy isometric figures — a guide"
 sidebarTitle: "WebGL Shaders"
-description: "Learn when shaders earn their place, how the three-layer stack works, and how to author fire, water, light, and glow effects that register perfectly with SVG."
+description: "Learn when shaders earn their place, how the three-layer stack works, and how to author fire, water, and glow effects that register with SVG."
 ---
 
 WebGL shaders let you place continuous-field effects — fire and exhaust, water surfaces, caustics, soft lamp light, smoke, and steam — inside an isometric figure so they read as part of the same object seen through the same camera. Two shipped examples do this: `examples/raptor-engine/` (a plume, shock, splash, and steam under a rocket engine) and `examples/ripple-tank/` (caustics, shadows, and a rippled water surface). Every rule on this page came from a bug that broke one of those figures.
@@ -107,8 +107,16 @@ import { kitScript, glScript } from "../../scripts/inline-kit.mjs";
   - `onError` — callback for compile errors (default `console.error`)
 </ParamField>
 
+<ParamField path="set(values)" type="void">
+  Sets uniforms without drawing. Use it to update uniforms between draws without triggering a render.
+</ParamField>
+
 <ParamField path="draw(values, time)" type="void">
   Resizes the canvas to its CSS box × `min(maxRatio, devicePixelRatio)`, sets camera uniforms, sets `uTime = time`, sets each value, and draws one full-screen triangle.
+</ParamField>
+
+<ParamField path="smooth(a, b, x)" type="number">
+  `smoothstep(a, b, x)` — a smooth ramp from 0 to 1 between `a` and `b`. Use it to cross-fade between two values or to gate a term on a uniform.
 </ParamField>
 
 <ParamField path="burst(age, rise, fall)" type="number">

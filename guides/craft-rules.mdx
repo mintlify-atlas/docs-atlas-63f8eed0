@@ -1,5 +1,5 @@
 ---
-title: "Craft rules for polished isometric figures"
+title: "Anatomy craft rules for polished isometric figures"
 sidebarTitle: "Craft Rules"
 description: "The rules separating a crafted figure from a diagram: solids, four-tone shading, painter's order, resolved lines, and the anti-patterns reviewers rejected."
 ---
@@ -131,6 +131,9 @@ These are the patterns that got figures rejected in practice. Reading this list 
   <Accordion title="Text in the drawing">
     Allow at most one tiny engraved label (`FaceText` on a face). Everything else goes in the card corners, legend, or caption.
   </Accordion>
+  <Accordion title="Copying a reference">
+    Take mood and finish from a reference image, then invent the object. Never trace or copy the reference object itself: the figure must be invented for the concept, not lifted from a photograph or drawing.
+  </Accordion>
   <Accordion title="Raw pointer jumps">
     Parts that snap to the cursor. Ease everything — exponential follow or real springs.
   </Accordion>
@@ -139,6 +142,9 @@ These are the patterns that got figures rejected in practice. Reading this list 
   </Accordion>
   <Accordion title="Textures that stop">
     Rows of bolt dots that stop dead in the middle of a surface, and curved bodies shaded as a staircase of flat tone blocks. The owner's words: "we'd rather fade them out at the end than an instant stop." Shade curved surfaces smoothly, and make textures end on a real edge or fade out.
+  </Accordion>
+  <Accordion title="Textures that stop, on flat faces too">
+    The same fault on boxes and flat faces: a weld seam inset a few units from the corners, ticks floating on a bare plate with no ruler under them, ribs stopping short of their seam arcs, and a hose braid drawn as a dashed stroke down the centreline that breaks at every chunk joint. A seam on a box runs edge to edge round the visible corners (`k.sideSeam`), ribs end on seams (`ribsOf(…, { seams: true })`), ticks hang from a ruler strip's edge, and a pipe texture comes from `tubePieces(…, { rings })`.
   </Accordion>
   <Accordion title="Shaders that pop or cut off">
     The first Raptor plume changed colour instantly between phases, "as if cut out", and a glow ended in a straight line at the canvas edge. Every shader term rides an envelope and reaches zero before any bound.

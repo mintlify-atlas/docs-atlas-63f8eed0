@@ -106,7 +106,7 @@ K.cylinder(x, y, 7, -PLATE_H - FOOT_H, 1.6, P, 28)
   - 16–20 for small cylinders (knobs, screws, pins)
   - 28–32 for medium cylinders (posts, feet, bosses)
   - 56–72 for large discs (dials, flanges, big pucks)
-  More steps only affect the tone fill facets; the outline and rims are sampled from the true circle.
+  More steps produce a smoother polygon outline and smoother silhouette. For crisp results at larger sizes, use more steps.
 </ParamField>
 
 <ParamField path="bevel" type="number" default="0">
@@ -326,5 +326,5 @@ The `steps` parameter controls how many points per corner arc are generated. Mor
 | Large discs (big flanges, dials, pucks) | 56–72 |
 
 <Tip>
-The steps parameter only affects the tone fill facets. Outlines, rims, and creases are always sampled from the true circle at approximately 1.5 px. A `cylinder` with 16 steps still has a smooth silhouette — it just has wider tone bands.
+For `slabOf` and `cylinder` in `iso-kit.ts`, `steps` controls the polygon resolution for everything: silhouette, fill, and tone faces all use the same polygon. More steps mean a smoother outline, but also more SVG path data. The separate-silhouette sampling (at ~1.5 px) is a feature of `lathe.mjs` solids only.
 </Tip>

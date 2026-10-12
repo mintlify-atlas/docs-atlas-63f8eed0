@@ -539,7 +539,7 @@ node scripts/turn-check.mjs page-light.html --perf --width 390 --throttle 4
   Drives 240 frames at 1.1° per frame through the controller inside `requestAnimationFrame` and measures script, task, style, and layout time per frame, plus the frame-interval median and p95, live elements, and writes/moves per frame. See `references/3d.md`, section 15 for budgets.
 </ParamField>
 
-<ParamField path="--step <deg>" type="number" default="0.02">
+<ParamField path="--step <deg>" type="number" default="1">
   Angle step for `--pops` and `--order`.
 </ParamField>
 

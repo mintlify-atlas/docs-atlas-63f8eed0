@@ -32,7 +32,7 @@ components/figures/rig/
   figure.tsx     <Plate fig title hint readout keys caption><RigArt /></Plate>
 ```
 
-`examples/test-rig/` and `examples/spot-plate/` follow this layout.
+`examples/test-rig/` follows this layout.
 
 ## The server/client split
 
@@ -49,7 +49,7 @@ components/figures/rig/
 
     export function RigArt() {
       const base = <g key="base"><Solid paths={BASE_ART.slab} tone="mid" /></g>;
-      const rail = <g key="rail"><Line paths={RAIL_ART} tone="lo" /></g>;
+      const rail = <g key="rail"><Line d={RAIL_ART} tone="lo" /></g>;
       return <RigLive base={base} rail={rail} />;
     }
     ```
@@ -63,10 +63,11 @@ components/figures/rig/
     export function RigLive({ base, rail }: { base: React.ReactNode; rail: React.ReactNode }) {
       const stageRef = useRef<SVGSVGElement>(null);
       const inView = useInView(stageRef);
-      const value = useEased(target, { seconds: 0.4 });
+      const value = useEased(target, 0.4);
 
-      useLoop(() => {
+      useLoop((dt, calm) => {
         // animate needle, readout, etc.
+        return true; // return false to stop the loop
       }, inView);
 
       return (
@@ -88,12 +89,12 @@ These components live in `kit/react/draw.tsx` and are safe to use in server comp
 | Component | What it renders |
 |-----------|-----------------|
 | `<Solid paths tone crease lit />` | A filled face group with the correct tone classes. |
-| `<Line paths tone />` | Stroke-only paths (seams, grooves, rules). |
-| `<Wire paths />` | Fine guide lines and wires. |
-| `<Dots positions tone size />` | A row of dot accents. |
-| `<FaceText text x y size />` | Engraved label text positioned in viewBox coordinates. |
-| `<IsoFigure width height label body />` | Wraps content in a `role="img"` SVG with the figure label. |
-| `<Plate fig title hint readout caption />` | The card shell with corner labels and caption. |
+| `<Line d tone dotted dashed flow free />` | Stroke-only paths (seams, grooves, rules). |
+| `<Wire from to via tone dotted dashed flow ends size />` | A connector with terminal dots. |
+| `<Dots points size tone pulse />` | A row of dot accents. Each point may carry opacity as `[x, y, alpha]`. |
+| `<FaceText transform size tone anchor>text</FaceText>` | Text on a face, placed by a matrix from `topMatrix` or `sideMatrix`. |
+| `<IsoFigure width height label>` | Wraps content in a `role="img"` SVG with the figure label. |
+| `<Plate fig title hint readout keys caption>` | The card shell with corner labels, legend keys, and caption. |
 
 ## live.tsx client hooks
 
@@ -101,13 +102,13 @@ These hooks live in `kit/react/live.tsx` and must be used inside `"use client"` 
 
 | Hook | What it does |
 |------|--------------|
-| `useReadout(anchor)` | Finds the nearest `[data-readout]` from `anchor` and returns a `say(text)` function that writes it without re-rendering. |
-| `useLoop(callback, active)` | Runs `callback` in a `requestAnimationFrame` loop while `active` is true. Stops when the component unmounts. |
-| `useEased(target, options)` | A critically-damped spring value. `options.seconds` is the settling time. |
-| `useInView(ref, options?)` | Returns `true` while the element is near the viewport. Stops animation offscreen. |
+| `useReadout()` | Returns `{ anchor, say }`. Put `anchor` on your root element; `say(text)` writes the card's readout without re-rendering. |
+| `useLoop(tick, running)` | Runs `tick(dt, calm)` in a `requestAnimationFrame` loop while `running` is true. Returns `kick()` to restart it. `tick` returns `true` to keep looping. |
+| `useEased(target, seconds)` | A critically-damped spring value that eases toward `target`. Fine for small figures. |
+| `useInView(ref)` | Returns `true` while the element is near the viewport. Stops animation offscreen. |
 | `useStillness()` | Returns `true` when `prefers-reduced-motion` is set. |
-| `follow(ref, getValue)` | Writes a CSS `transform` to `ref.current` each frame without re-rendering. |
-| `spring(state, target, dt, seconds)` | Integrate one step of a critically-damped spring (call inside `useLoop`). |
+| `follow(current, target, dt, seconds, calm)` | Exponential easing step: returns the new value one `dt` step toward `target`. Call inside `useLoop`. |
+| `spring(state, target, dt, stiffness, damping, calm)` | One sub-stepped spring step on `state = { x, v }`. Returns `true` when settled. Call inside `useLoop`. |
 
 ## The element-props pattern
 
@@ -118,7 +119,7 @@ The most important pattern in the React integration is passing pre-rendered elem
 const dial = (
   <React.Fragment key="dial">
     <Solid paths={DIAL_FACE} tone="hi" />
-    <Line paths={DIAL_TICKS} tone="lo" />
+    <Line d={DIAL_TICKS} tone="lo" />
   </React.Fragment>
 );
 

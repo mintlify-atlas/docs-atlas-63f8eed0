@@ -1,5 +1,5 @@
 ---
-title: "turn.mjs: 3D groups, poses, and orbit audit API"
+title: "turn.mjs: 3D turning groups, poses, and orbit audit API"
 sidebarTitle: "turn.mjs"
 description: "Build turning, sliding, hinged and free groups; pack a live layer into a page; and run the orbit audit across a full sweep of angles and poses."
 ---
@@ -205,6 +205,9 @@ Binds every live layer in `stage`, renders the rest pose, and installs `window._
 | `controller.orderIndex(layer)` | The order index. |
 | `controller.events()` | Order-change events. |
 | `controller.stats()` | `{ ms, writes, moved, forced, refined, unseparated, emitted }`. |
+| `controller.frames()` | The replayed frame states used by the depth solver. |
+| `controller.cams()` | The per-group camera records used by `anchor` and the shader pose helpers. |
+| `controller.scene()` | The prepared scene object — parts, groups and layers as built. |
 | `controller.destroy()` | Removes event listeners and cleans up. Return it from a React effect's cleanup. |
 
 ### TURN.cover

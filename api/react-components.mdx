@@ -1,5 +1,5 @@
 ---
-title: "React components and hooks for Anatomy figures"
+title: "React components and hooks for Anatomy isometric figures"
 sidebarTitle: "React Components"
 description: "Server-safe drawing primitives from draw.tsx and client hooks from live.tsx for building interactive isometric figures in React and Next.js."
 ---
@@ -12,7 +12,7 @@ The recommended file layout builds static parts as JSX in a server component and
 
 ```tsx
 // art.tsx — server component
-import { IsoFigure, Plate, Solid, Line, Wire } from "../../iso/draw";
+import { IsoFigure, Plate, Solid, Line, Wire } from "../../kit/react/draw";
 import { BASE_ART } from "./geometry";
 
 export const RigArt = ({ base, dial }: { base: JSX.Element; dial: JSX.Element }) => (
@@ -29,7 +29,7 @@ export const DIAL = <g key="dial"><Solid paths={BASE_ART.dial} tone="hi" /></g>;
 ```tsx
 // live.tsx — client component
 "use client";
-import { useReadout, useLoop, follow, spring } from "../../iso/live";
+import { useReadout, useLoop, follow, spring } from "../../kit/react/live";
 import { RigArt } from "./art";
 
 export function RigLive({ base, dial }: { base: JSX.Element; dial: JSX.Element }) {
@@ -55,7 +55,7 @@ export function RigLive({ base, dial }: { base: JSX.Element; dial: JSX.Element }
 Renders a `SolidPaths` object — the return value of `slabOf`, `cylinder`, `extrude`, `lathe`, and similar kit builders. Paints fill, shades, top face, crease, bevel, and outline in painter's order.
 
 ```tsx
-import { Solid } from "../../iso/draw";
+import { Solid } from "../../kit/react/draw";
 <Solid paths={BASE_ART.slab} tone="mid" halo lit={false} />
 ```
 
@@ -98,7 +98,7 @@ import { Solid } from "../../iso/draw";
 A styled SVG path. Every `.iso-line` in the card is checked by `scripts/lines.mjs`: both endpoints must land on a stroke, a dot, or an outline, or lie under a later fill.
 
 ```tsx
-import { Line } from "../../iso/draw";
+import { Line } from "../../kit/react/draw";
 <Line d={groovePath} tone="faint" />
 <Line d={flowPath} tone="lo" flow />
 <Line d={rulePath} tone="lo" free />
@@ -135,7 +135,7 @@ import { Line } from "../../iso/draw";
 A connector with terminal dots at one or both ends. Combines a `<Line>` with `<circle>` elements at the endpoints.
 
 ```tsx
-import { Wire } from "../../iso/draw";
+import { Wire } from "../../kit/react/draw";
 <Wire from={screenA} to={screenB} tone="lo" ends="both" size={1.2} />
 <Wire from={screenA} to={screenB} via={[midpoint]} tone="faint" ends="to" />
 ```
@@ -183,7 +183,7 @@ import { Wire } from "../../iso/draw";
 A group of projected dot marks. A point may carry an optional third value as its opacity, which is how `dotsOf(…, { fade })` fades bolt circles out toward the limb instead of stopping them mid-surface.
 
 ```tsx
-import { Dots } from "../../iso/draw";
+import { Dots } from "../../kit/react/draw";
 <Dots points={dotsOf(F, s, r, count, P)} tone="mid" size={0.5} />
 <Dots points={fading} tone="mid" pulse />
 ```
@@ -211,8 +211,8 @@ import { Dots } from "../../iso/draw";
 Renders text flat on an isometric face using a transform from `topMatrix` or `sideMatrix`.
 
 ```tsx
-import { FaceText } from "../../iso/draw";
-import { topMatrix } from "../../iso/iso-kit";
+import { FaceText } from "../../kit/react/draw";
+import { topMatrix } from "../../kit/iso-kit";
 
 const T = topMatrix([x, y], z, P);
 <FaceText transform={T} size={3} tone="mid" anchor="start">LABEL</FaceText>
@@ -245,7 +245,7 @@ const T = topMatrix([x, y], z, P);
 Wraps SVG children in an accessible `<svg>` inside a `Stage` div that tracks intersection and adds `data-inview` for CSS animations.
 
 ```tsx
-import { IsoFigure } from "../../iso/draw";
+import { IsoFigure } from "../../kit/react/draw";
 
 <IsoFigure width={460} height={380} label="A cutaway of a relief valve showing the spring and poppet">
   {/* svg children */}
@@ -279,7 +279,7 @@ import { IsoFigure } from "../../iso/draw";
 The complete card component. Renders the figure number, title, hint, readout, legend keys, and caption around the figure content. The readout slot carries `data-readout` so `useReadout()` can write to it without a re-render.
 
 ```tsx
-import { Plate } from "../../iso/draw";
+import { Plate } from "../../kit/react/draw";
 
 <Plate
   fig="Fig 1"
@@ -333,7 +333,7 @@ Finds the nearest `.iso-plate [data-readout]` element from its anchor ref and re
 
 ```tsx
 "use client";
-import { useReadout } from "../../iso/live";
+import { useReadout } from "../../kit/react/live";
 
 export function RigLive({ base }: { base: JSX.Element }) {
   const { anchor, say } = useReadout<SVGGElement>();
@@ -390,7 +390,7 @@ const kick = useLoop((dt, calm) => {
 Exponential easing toward a target. Returns the new value. In calm mode returns `target` immediately.
 
 ```tsx
-import { follow } from "../../iso/live";
+import { follow } from "../../kit/react/live";
 
 // Inside useLoop tick:
 shown.current = follow(shown.current, target, dt, 0.18, calm);
@@ -423,7 +423,7 @@ shown.current = follow(shown.current, target, dt, 0.18, calm);
 A sub-stepped spring simulation. Mutates `state` in place and returns `true` when the spring has settled.
 
 ```tsx
-import { spring, type Spring } from "../../iso/live";
+import { spring, type Spring } from "../../kit/react/live";
 
 const pressure: Spring = { at: 0, rate: 0 };
 
@@ -468,7 +468,7 @@ return !settled;
 Drives a single eased number as React state. Suitable for small figures with one or two eased values; use `useLoop` with refs for anything heavier.
 
 ```tsx
-import { useEased } from "../../iso/live";
+import { useEased } from "../../kit/react/live";
 
 const angle = useEased(targetAngle, 0.18);
 // angle is a React state value that follows targetAngle
@@ -493,7 +493,7 @@ const angle = useEased(targetAngle, 0.18);
 Returns `true` when the referenced element is intersecting the viewport (with a 120 px root margin). Drives the `running` flag for `useLoop` so animation stops when the figure scrolls off screen.
 
 ```tsx
-import { useInView } from "../../iso/live";
+import { useInView } from "../../kit/react/live";
 
 const ref = React.useRef<HTMLDivElement>(null);
 const inView = useInView(ref);
@@ -515,7 +515,7 @@ const kick = useLoop(tick, inView && !stillness);
 Subscribes to `prefers-reduced-motion: reduce` with `useSyncExternalStore`. Returns `true` when the user has requested reduced motion. Safe to call during rendering on the client; returns `false` during SSR.
 
 ```tsx
-import { useStillness } from "../../iso/live";
+import { useStillness } from "../../kit/react/live";
 
 const stillness = useStillness();
 const kick = useLoop(tick, inView && !stillness);
@@ -528,7 +528,7 @@ const kick = useLoop(tick, inView && !stillness);
 The same check as `useStillness` but as a plain function — `window.matchMedia("(prefers-reduced-motion: reduce)").matches`. Safe only inside effects and frame loops, not during rendering.
 
 ```tsx
-import { asksForStillness } from "../../iso/live";
+import { asksForStillness } from "../../kit/react/live";
 
 // Inside a useLoop tick callback:
 const calm = asksForStillness();
@@ -542,7 +542,7 @@ shown.current = follow(shown.current, target, dt, 0.18, calm);
 The wrapper component that `IsoFigure` uses internally. Attaches a ref to a `<div>`, calls `useInView`, and sets `data-inview` when the element is visible. CSS animations key on `[data-inview]` to start only when the figure is on screen.
 
 ```tsx
-import { Stage } from "../../iso/live";
+import { Stage } from "../../kit/react/live";
 
 // IsoFigure renders:
 <Stage className="iso-stage">

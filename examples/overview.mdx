@@ -19,7 +19,7 @@ The examples directory ships eight complete, production-quality Anatomy figures.
     icon="rocket"
     href="/examples/raptor-engine"
   >
-    A Raptor 2 in a test stand — about 478 geometry items, 11 hover-apart assemblies, and a WebGL plume with shock diamonds and steam. The reference for dense pipework and the audit.
+    A Raptor 2 in a test stand — about 478 geometry items, 11 hover-apart assemblies, and a WebGL plume with shock diamonds, water splash and steam. The reference for dense pipework and the audit.
   </Card>
   <Card
     title="Ripple Tank"
@@ -74,7 +74,7 @@ The table below summarises the key facts for each example. "Solids" counts named
 | `dial-indicator` | ~50 | SVG, standalone HTML | — | — | `node examples/dial-indicator/build.mjs` |
 | `desk-computer` | ~85 | SVG, standalone HTML | — | — | `node examples/desk-computer/build.mjs` |
 | `arcade-cabinet` | ~240 + 15 cables | SVG, standalone HTML | — | — | `node examples/arcade-cabinet/build.mjs` |
-| `raptor-engine` | ~478 | SVG + WebGL, standalone HTML | ✓ plume, shock, steam | — | `node examples/raptor-engine/build.mjs` |
+| `raptor-engine` | ~478 | SVG + WebGL, standalone HTML | ✓ plume, shock, splash, steam | — | `node examples/raptor-engine/build.mjs` |
 | `ripple-tank` | apparatus | SVG + WebGL, standalone HTML | ✓ 2 layers | — | `node examples/ripple-tank/build.mjs` |
 | `test-rig` | 53 | React/Next.js components | — | — | none — copy into React app |
 | `spot-plate` | 6 drop pairs | React/Next.js components | — | — | none — copy into React app |
@@ -151,7 +151,7 @@ The `test-rig` and `spot-plate` examples are production figures taken directly f
     └── figure.tsx     — the page-level wrapper that composes art and live
     ```
 
-    To use it, copy the whole `test-rig/` directory into your React app and import `Figure` from `figure.tsx`. Install `kit/react/` alongside it. The figure uses `kit/react/draw.tsx` for the server-side SVG render and `kit/react/live.tsx` for the client hooks.
+    To use it, copy the whole `test-rig/` directory into your React app and import `TestRigFigure` from `figure.tsx`. Install `kit/react/` alongside it. The figure uses `kit/react/draw.tsx` for the server-side SVG render and `kit/react/live.tsx` for the client hooks.
   </Tab>
   <Tab title="spot-plate">
     The spot-plate figure uses a distance-field technique to draw each drop pair from a single scalar field, then morphs the six pairs as a fan of feeler blades opens:
@@ -167,7 +167,7 @@ The `test-rig` and `spot-plate` examples are production figures taken directly f
     └── figure.tsx     — page wrapper
     ```
 
-    Copy the `spot-plate/` directory into your React app. The setup is the same as test-rig: import `Figure` from `figure.tsx` and ensure `kit/react/` is available.
+    Copy the `spot-plate/` directory into your React app. The setup is the same as test-rig: import `SpotPlateFigure` from `figure.tsx` and ensure `kit/react/` is available.
   </Tab>
 </Tabs>
 

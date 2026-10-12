@@ -1,5 +1,5 @@
 ---
-title: "lathe.mjs: round parts and pipes on any axis"
+title: "lathe.mjs: round parts on any axis in isometric SVG"
 sidebarTitle: "lathe.mjs"
 description: "Turn any meridian profile around any axis — bells, flanges, valve bodies, pipe fittings. Returns the same SolidPaths as slabOf, so solidSvg paints them."
 ---
@@ -100,7 +100,8 @@ G.bandsOf(profile, cuts, F, P, { radius: bell, slope: bellSlope, steps: 96, rows
 | Value | Behaviour |
 |---|---|
 | `"auto"` (default) | Smooth when any vertex is `[s, r, 1]`; flat otherwise. |
-| `true` | Force smooth shading using monotone Hermite through all smooth-marked runs. |
+| `true` | Force smooth shading using monotone Hermite through smooth-marked runs, on a profile with no smooth vertices. |
+| `{ rows }` | Same as `true`, but override the starting row count per segment (default 6). Use on a profile without smooth vertices. |
 | `{ slope }` | Analytic `dr/ds`. Profile points are joined straight — sample the analytic `r(s)` densely (20–30 knots). |
 | `{ slope, radius }` | Analytic slope **and** surface. Two knots per band is enough; `bandsOf` uses this. |
 | `false` | Force flat shading. |

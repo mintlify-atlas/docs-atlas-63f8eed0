@@ -1,5 +1,5 @@
 ---
-title: "3D mode: turning groups and live isometric parts"
+title: "3D mode: turning groups and live isometric figures"
 sidebarTitle: "3D Mode"
 description: "The optional 3D mode for Anatomy lets parts turn, hinge, slide, and break off while staying rendered in the kit's own isometric projection every frame."
 ---
@@ -60,7 +60,7 @@ export const T = turning(P, { recorder: R });
 | `T.group(name, { parent, slide: { direction, travel } })` | Slide group, value `0…travel`. |
 | `T.group(name, { parent, free: { origin } })` | Free rigid body, value `{ R, t, world? }` or `null` for rest. |
 | `T.layer(name)`, `T.stack([…])` | Live layers and the full stack of live and static layer names, back to front. |
-| `T.build({ statics, poses, verify })` | Solves every pair, proves every static item's layer, packs page data. |
+| `T.build({ statics, poses, verify, strict })` | Solves every pair, proves every static item's layer, packs page data. `strict: false` keeps interlocked pairs (so a planted fault can reach the audit). |
 
 ### Part constructors
 
@@ -68,6 +68,7 @@ export const T = turning(P, { recorder: R });
 |-------------|------|
 | `T.prism({ plan, z, h, bevel })` | Upright kit slab. |
 | `T.round({ F, s0, s1, r, ends })` | Cylinder or cone frustum; ends can be `"flat"`, `"dome"`, or `"open"`. |
+| `T.lathe({ F, profile, slope, radius })` | A general convex smooth body — `r(s)` must be concave. Costly; prefer rounds. |
 | `T.ball({ c, r, flats })` | Sphere; each flat `{ n, d }` draws a rim as a cap. Without flats it is a fixed picture. |
 | `T.tube({ route, r, hue, material, gaps })` | Kit `tubePieces` semantics, chunked. Route runs mount surface to mount surface. |
 | `T.fixed({ svg, anchor, shapes })` | Kit markup whose picture never changes under the group's motion, moved by translate. |
@@ -122,12 +123,18 @@ function tick(now) {
 | Call | What it does |
 |------|--------------|
 | `TURN.mount(stage, data, options)` | Binds every live layer, renders the rest pose, installs `window.__isoTurn`. |
-| `controller.set(values)` | Sets group values and renders synchronously. |
+| `controller.set(values, { detail })` | Sets group values and renders synchronously. `detail` (0–1) scales faded lines, ribs, and dots. |
 | `controller.angleAt(clientX, clientY, z, group)` | Pointer as an unwrapped angle for drag-to-turn. |
 | `controller.pose(name)` | The group's world pose `{ R, t }`. |
 | `controller.detach(name)` | A `{ world: true, R, t }` value continuing a free group's current pose in world frame (no jump). |
 | `controller.anchor(group, restPoint, restDir?)` | Where a rest-world point of a group is now: `{ world, screen, direction }`. Used to anchor shader effects. |
+| `controller.stats()` | `{ ms, writes, moved, forced, refined, unseparated, emitted }` — performance and order stats for the last frame. |
+| `controller.events()` | Returns order-change events (part pairs that swap order at some angle). |
 | `controller.destroy()` | Cleanup; return from a React effect. |
+| `TURN.cover(controller, names, options)` | Cover mask uniforms for a shader that must stop at a live part's silhouette: `{ uCoverEdge, uCoverCount, dropped, parts }`. |
+| `TURN.poseUniforms(controller, group, prefix)` | `{ prefixX, prefixY, prefixZ, prefixT }` for transforming world points into a group's rest-world frame in GLSL. |
+| `TURN.floorOf(scene, group, R)` | The lowest z of a group's parts under rotation `R` — used to set a free piece down flush. |
+| `window.__isoTurn` | `{ controller, set, get, order, events, stats, layers }` — the live figure hook. Every call triggers `onHold`. |
 
 ## Materials
 

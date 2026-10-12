@@ -1,7 +1,7 @@
 ---
 title: "Raptor Engine: the Anatomy reference for dense pipework"
 sidebarTitle: "Raptor Engine"
-description: "A Raptor 2 engine in a test stand with 11 assemblies that explode apart, WebGL plume and steam, and a full geometry audit over 478 recorded items."
+description: "A Raptor 2 in a test stand: 11 hover-apart assemblies, WebGL plume with shock diamonds, splash and steam, and a geometry audit over 478 items."
 ---
 
 The raptor-engine example is the most complex figure that ships with Anatomy. It depicts a SpaceX Raptor 2 engine hanging from a vertical test stand: a deck on feet with a flame cone and deluge ring, two columns, and a crosshead with a load cell and gimbal actuators. Hover the engine to take it apart into 11 named assemblies with staggered springs; press Ignite to fire the engine and see the WebGL plume, shock diamonds, steam and splash. It is the reference to open whenever a figure has dense pipework, smooth shading on round parts, per-frame depth re-sorting, or a WebGL effect.
@@ -11,7 +11,7 @@ The raptor-engine example is the most complex figure that ships with Anatomy. It
 - `kit/lathe.mjs` for all round parts: turbopumps, preburners, the main chamber, the nozzle bell, flanges, valves and fittings
 - `kit/tube.mjs` for all pipes, ducts, sense lines and the engine harness, with collars, clamps and fittings using `gaps` and `breaks`
 - `kit/audit.mjs` for geometry verification: `A.recorder`, `A.settle` and `A.auditOrExit` over 478 recorded items
-- `kit/gl.mjs` for four WebGL effects between the back and front SVG layers: exhaust plume with shock diamonds, water splash on the base plate, steam and a glow rim
+- `kit/gl.mjs` for the WebGL effects between the back and front SVG layers: exhaust plume with shock diamonds, water splash on the base plate, and steam rising from the deluge
 - 11 assemblies with names and `say` strings, staggered spring delays, and per-frame depth re-sorting as each assembly moves
 - The `PIECES` map and `STAGGER` order that control which assembly moves first on explode
 
@@ -80,7 +80,7 @@ The Raptor audit takes a few minutes. It checks 478 recorded items across the re
 
 A passing run ends with `audit passed`, every failing line at 0:
 
-```
+```text
 clearances       0
 terminals        0
 loose ends       0
