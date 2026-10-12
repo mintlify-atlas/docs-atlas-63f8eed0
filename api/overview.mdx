@@ -1,0 +1,167 @@
+---
+title: "Anatomy kit API overview: files, types, coordinates"
+sidebarTitle: "Overview"
+description: "The complete kit file map, world and screen coordinate systems, all eight core types, and import patterns for building isometric SVG figures."
+---
+
+The Anatomy kit is a collection of pure-JavaScript modules that live in `kit/`. They share no npm dependencies and run in Node 20.10+ as ESM modules. Two entry points expose the same API: `kit/iso-kit.ts` for TypeScript builds and `kit/iso-kit.mjs` for Node build scripts. Everything flows from those files: a world coordinate, projected through a camera, into SVG `d` strings, assembled into HTML cards.
+
+## Kit files
+
+<CardGroup cols={2}>
+  <Card title="iso-kit.ts / iso-kit.mjs" icon="cube" href="/api/solids">
+    Core kit: camera, solids, lines on faces, parts library, SVG string renderers, card and page builders, and all shared types.
+  </Card>
+  <Card title="lathe.mjs" icon="circle" href="/api/lathe">
+    Solids of revolution on any axis: bells, chambers, flanges, valve bodies, pump volutes, pipe fittings, and smooth shading.
+  </Card>
+  <Card title="tube.mjs" icon="pipe-section" href="/api/tube">
+    Pipes, tubes, and cables: depth-sorted ribbon pieces, stripes, rings, braids, corrugations, and gap/cap handling.
+  </Card>
+  <Card title="audit.mjs" icon="circle-check" href="/api/audit">
+    Build-time verification: clearance, depth order, folds, crowding, mounts, loose ends, and seat checks.
+  </Card>
+  <Card title="gl.mjs" icon="sparkles" href="/api/webgl">
+    WebGL layer: `glLayer`, camera uniforms, GLSL prelude, JS spring and burst helpers.
+  </Card>
+  <Card title="turn.mjs / turn-build.mjs" icon="rotate" href="/api/turn">
+    Optional 3D mode: turning groups, prisms, rounds, lathes, tubes, and the orbit audit.
+  </Card>
+  <Card title="react/draw.tsx" icon="atom" href="/api/react-components">
+    Server-safe React components: `<Solid>`, `<Line>`, `<Wire>`, `<Dots>`, `<FaceText>`, `<IsoFigure>`, `<Plate>`.
+  </Card>
+  <Card title="react/live.tsx" icon="play" href="/api/react-components">
+    Client React hooks: `useReadout`, `useLoop`, `follow`, `spring`, `useEased`, `useInView`, `Stage`.
+  </Card>
+</CardGroup>
+
+## Two entry points
+
+The kit ships as both TypeScript (for projects that type-check their build scripts) and plain ESM (for Node build scripts with no compile step).
+
+<Tabs>
+  <Tab title="Node build script (ESM)">
+    ```js
+    import * as K from '../../kit/iso-kit.mjs';
+    ```
+
+    Use this in any `build.mjs` file that runs directly with `node build.mjs`. No `tsconfig`, no `tsc`. All kit functions are available at `K.*`.
+  </Tab>
+  <Tab title="TypeScript source">
+    ```ts
+    import {
+      fitProjection,
+      slabOf,
+      solidSvg,
+      lineSvg,
+      plateHtml,
+      type Plan,
+      type Projection,
+      type SolidPaths,
+    } from '../../kit/iso-kit';
+    ```
+
+    Use named imports when writing a `.ts` build script or React component alongside the kit's type definitions.
+  </Tab>
+</Tabs>
+
+The extensions follow the same pattern:
+
+```js
+import * as G from '../../kit/lathe.mjs';
+import { tubePieces, tubeSvg } from '../../kit/tube.mjs';
+import * as A from '../../kit/audit.mjs';
+```
+
+## Coordinate systems
+
+The kit uses two coordinate spaces that map to each other through the camera projection.
+
+### World coordinates — `Point3 = [x, y, z]`
+
+World space is a right-handed system with `x` and `y` on the floor and `z` pointing straight up. One world unit is approximately one screen pixel at the default camera scale, though `fitProjection` adjusts this to fill the viewBox.
+
+- **x** — runs left-to-right on the floor
+- **y** — runs front-to-back on the floor (increasing away from the viewer's left)
+- **z** — rises straight up off the floor
+
+A `Plane = [number, number]` is a floor point with no height — just `[x, y]`. A `Plan` is a rounded rectangle on the floor:
+
+```ts
+interface Plan {
+  x: number;   // left edge
+  y: number;   // front edge
+  w: number;   // width (x direction)
+  d: number;   // depth (y direction)
+  r: number;   // corner radius
+}
+```
+
+### Screen coordinates — `Flat = [sx, sy]`
+
+Screen space is the SVG viewBox. `[0, 0]` is the top-left corner. The `iso(point, P)` function converts any world point to screen coordinates. Paths come back as SVG `d` strings rounded to 0.1 px.
+
+## The `Projection` type
+
+A `Projection` holds the camera state computed by `fitProjection`. It is passed to every drawing function.
+
+```ts
+interface Projection {
+  origin: Flat;      // screen position of the world origin
+  scale: number;     // screen pixels per world unit
+  azimuth?: number;  // camera angle around z, default 45°
+  elevation?: number; // camera angle above the floor, default 30°
+}
+```
+
+The default azimuth of 45° shows both the left and right faces of a box equally. The default elevation of 30° is shallow enough to reveal vertical faces but steep enough to show the top clearly.
+
+## Core types
+
+All eight types used throughout the kit:
+
+| Type | Definition | Used for |
+|---|---|---|
+| `Flat` | `[number, number]` | Screen point in the SVG viewBox |
+| `Point3` | `[number, number, number]` | World point `[x, y, z]` |
+| `Plane` | `[number, number]` | Floor point `[x, y]`, no height |
+| `Plan` | `{ x, y, w, d, r }` | Rounded rectangle on the floor |
+| `Projection` | `{ origin, scale, azimuth?, elevation? }` | Camera state |
+| `SolidPaths` | `{ fill, outline, crease, top, shades, bevel?, seamless? }` | All path strings for one solid |
+| `Tone` | `"hi" \| "mid" \| "lo" \| "faint"` | Brightness level for fills and lines |
+| `LineTone` | `Tone \| "lit" \| "red" \| "green" \| "blue"` | Line colour, extends `Tone` |
+
+### `SolidPaths` in detail
+
+Every solid builder returns a `SolidPaths` object whose fields map directly to CSS classes painted by `solidSvg` (or the `<Solid>` React component):
+
+```ts
+interface SolidPaths {
+  fill: string;       // paper-coloured hull — hides whatever is behind
+  shades: string[];   // shades[0..3]: visible side faces bucketed by how they face the light
+  top: string;        // the top face, lighter than the sides
+  crease: string;     // where the top meets the visible sides
+  bevel?: string;     // optional highlight line inset on the top along visible edges
+  outline: string;    // the silhouette
+  seamless?: boolean; // set on smooth lathe solids; changes stroke handling in ISO_CSS
+}
+```
+
+`solidSvg` paints them in this exact order: `fill` → `shades` → `top` → `crease` → `bevel` → `inner` (extra line markup) → `outline`.
+
+## Quick links
+
+<CardGroup cols={2}>
+  <Card title="Camera" icon="video" href="/api/camera">
+    `fitProjection`, `iso`, `depthOf`, `towardViewer`, `screenRise`, `cameraOf`
+  </Card>
+  <Card title="Solids" icon="cube" href="/api/solids">
+    `slabOf`, `cylinder`, `extrude`, `ringOf`, `circleRing`, `insetPlan`, `haloOf`
+  </Card>
+  <Card title="Parts Library" icon="wrench" href="/api/parts-library">
+    `knurl`, `coil`, `sideSeam`, `sideRing`, `topTicks`, `translateAlong`
+  </Card>
+  <Card title="SVG Strings" icon="code" href="/api/svg-strings">
+    `solidSvg`, `lineSvg`, `dotsSvg`, `wireSvg`, `figureSvg`, `plateHtml`, `pageHtml`
+  </Card>
+</CardGroup>

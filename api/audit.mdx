@@ -1,0 +1,211 @@
+---
+title: "audit.mjs: geometry proof for isometric figures"
+sidebarTitle: "audit.mjs"
+description: "Record every drawn shape, settle depth keys, and run automated clearance, terminal, support, order, and crowding checks from one build flag."
+---
+
+A detailed figure fails in ways the eye misses until a reviewer zooms in — a pipe that passes through a housing, a flange that floats off its mount, a cable end that dangles when the figure comes apart, or two parts drawn in the wrong order where they overlap. `kit/audit.mjs` measures all of them from the real geometry.
+
+```js
+import * as A from "../../kit/audit.mjs";
+```
+
+## The one-line hook
+
+Make a recorder, let every drawing helper put its items and record its shapes, settle the keys, and end the build with `auditOrExit`:
+
+```js
+const R = A.recorder(P, { order: STAGGER, spring: SPRING });
+
+R.put({
+  piece: "base",
+  at: centre,
+  bias: 0.1,
+  svg,
+  shapes: [R.solid(A.slab(plan, 0, 6, { name: "base.plate" }))],
+});
+R.route("base.cable", route, 0.6, { piece: "base", gaps, limp: true });
+
+A.settle(R, P);
+R.items.sort((a, b) => a.key - b.key);
+A.auditOrExit(R, P, { crowd: [] });
+```
+
+Running `node build.mjs --audit` prints the report and exits non-zero on any failing line. Without the flag, `auditOrExit` returns at once. A figure that doesn't come apart passes no `order` and every explode check reduces to the rest pose.
+
+## recorder
+
+```js
+const R = A.recorder(P, { order: STAGGER, spring: SPRING, ground: grounded });
+```
+
+Returns `{ items, solids, tubes, routes, put, solid, route, nameFor }`.
+
+<ParamField path="order" type="array" default="[]">
+  The live page's stagger — the order in which assemblies open. Pass the same value as the live page so the audit and page can't drift apart.
+</ParamField>
+
+<ParamField path="spring" type="object" default="{}">
+  The live page's spring parameters (stiffness, damping). Used by `springStates` to replay the animation.
+</ParamField>
+
+<ParamField path="ground" type="function">
+  Predicate for what counts as ground. Defaults to shapes with `ground: true` in meta or names starting `stand.`.
+</ParamField>
+
+| Method | What it does |
+|---|---|
+| `R.put({ at, bias, key, name, piece, move, ride, shapes, ...rest })` | Adds a drawn item. Key defaults to `dot3(at, V) + bias`. The rest (such as `svg`, `route`, `chunk`) is kept on the item. |
+| `R.solid(shape)` | Records a shape and returns it, for use in the item's `shapes` or for static parts drawn outside the sorted layer. |
+| `R.route(name, points, radius, options)` | Records a pipe or cable: one tube per drawn run between `gaps`, with tips, tip axes, tip rims and free ends. |
+| `R.nameFor(base)` | Numbers repeated names (`base`, `base#2`, …). |
+
+## settle
+
+```js
+A.settle(R, P, { states, skip, ...overlapOptions });
+```
+
+Runs `overlapsOf` and `orderKeys` and writes the keys onto the items. Run it on every build.
+
+<Note>
+  `settle` keeps the order the items already had, so you may sort `R.items` afterwards by `key` without breaking anything.
+</Note>
+
+## auditOrExit
+
+```js
+A.auditOrExit(R, P, { flag: "--audit", argv, crowd, cover, allow, ...auditOptions });
+```
+
+With `--audit` in `argv`: runs `audit`, prints the report and a summary line, and sets `process.exitCode = 1` on any failing check. Without the flag, returns at once.
+
+## Shape constructors
+
+Record a shape for everything you draw, in world units, as you build it:
+
+| Constructor | Shape |
+|---|---|
+| `A.solid(F, profile, meta)` | A turned part: the profile closed to the axis at both ends, the same `[s, r]` list given to `solidOf`. Runs of smooth knots are traced along the same Hermite curve the drawing uses, or along `radius(s)` for a `bandsOf` band. |
+| `A.lathe(F, meridian, meta)` | Any closed meridian — rings, valve bodies, cans. |
+| `A.body(F, polygon, meta)` | Any closed `[s, r]` polygon turned round `F`, taken as-is. |
+| `A.disc(F, s0, s1, r, meta)` | Flanges, bosses, pins, plugs. |
+| `A.ring(F, s0, s1, rIn, rOut, meta)` | Collars. |
+| `A.box(min, max, meta)` | An axis-aligned box. |
+| `A.orientedBox(centre, axes, half, meta)` | An oriented box — a beam at 45°. |
+| `A.slab(plan, z, height, meta, steps)` | The shape of `slabOf`: a rounded plan stood on the floor. |
+| `A.extruded(ring, z, height, meta)` | The shape of `extrude`: any polygon ring, convex or not. |
+| `A.cylinder(cx, cy, r, z, height, meta)` | The shape of `cylinder`. |
+| `A.prism(F, polygon, s0, s1, meta)` | The shape of `prismOf`. |
+| `A.traced(meridian, options)` | The polygon `solid` and `lathe` record. |
+| `A.ball(at, r, meta)` | A sphere. `meta.flats: [[nx, ny, nz, d]]` cuts flat faces. |
+| `A.tube(points, radius, meta)` | A pipe or cable centreline with a radius (number, function of 0..1, or per-point list). |
+| `A.slide(F, from, to, r, meta)` | A rod sliding out of a gland. Posed in an explode state, it stretches rather than translating. |
+| `A.moved(shape, offset)` | Translate a shape. |
+| `A.sdf(shape, p)` | Signed distance to a shape (negative inside). |
+| `A.boundsOf(shape)` | World bounds of a shape. |
+
+### Meta fields
+
+`meta` on any shape carries:
+
+| Field | Meaning |
+|---|---|
+| `name` | Used in reports; matched by prefix (`"nozzle.bell*"`). |
+| `owner` | A pipe's own flanges, bands and valve — excuses clearance between them. |
+| `touch` | Names a tube may touch on purpose (clamps round a harness). |
+| `bundle` | Cables in one harness; clamps carry the harness bundle. |
+| `joined` | Runs of one gapped pipe. |
+| `limp` | A cable — it holds nothing up. |
+| `anchor: false` | A clamp — an end may not count it as its mount. |
+| `fitting` | A clamp or collar whose centre `crowding` checks against other lines. |
+| `seated` | A pad sunk into its host by design. |
+| `cut` | Shapes subtracted from this one (a saddle pad cut by its host cylinder). |
+| `curve` | The smoothed profile of a turned part with no analytic slope, for `wobble`. |
+
+## overlapsOf and orderKeys
+
+`settle` uses these internally; you can call them directly for custom workflows.
+
+**`overlapsOf(items, P, options)`** finds every pair of drawn items whose screen footprints overlap and ray-casts both shapes along the camera ray. It uses a grid of `step` (default 0.25) viewBox units, and a cell counts when one surface is more than `tolerance` (default 0.3) nearer. Pair results are cached by relative shift, so pairs that move together are measured once.
+
+**`orderKeys(items, overlaps, { gap })`** turns every one-sided pair into a constraint: `keyFront − keyBack ≥ gap + shareBack · liftBack − shareFront · liftFront`. One longest-path relaxation settles all states at once and only ever moves an item later. A loop that can't be met drops its weakest rule (`dropped`).
+
+## States
+
+An explode state is a number (every assembly at that share) or `{ label, shares }`, one share per assembly.
+
+| Function | What it does |
+|---|---|
+| `uniformStates(10)` | States 0, 0.1, …, 1 for rough key-solving. |
+| `springStates(order, options)` | Replays the live page's springs with their stagger, opening and closing, one state per frame at `fps`. |
+| `reversalsOf(order, stagger)` | Adds a reversal 8 ms either side of every stagger boundary — where bad ordering windows occur. |
+| `prefixStates(order, options)` | Static states behind the prefix rule: first `k − 1` assemblies fully out, the `k`-th at each share. |
+| `shareOf(item, state)` | An item's share in a given explode state. |
+| `offsetOf(item, state)` | An item's world offset in a given explode state. |
+
+<Warning>
+  **`reversalsOf` finds bugs hand-picked times miss.** Three hand-picked reversal times missed every ordering failure on the Raptor engine — a part that had just left came straight back through another assembly still parked at home. Use `reversalsOf(order, stagger)` to generate them automatically.
+</Warning>
+
+## Key checks
+
+`audit(R, P, options)` runs all of these at once. You can also call each check directly.
+
+<Accordion title="clearances — pipe penetrations">
+  Samples every tube and lists every place it comes closer than `max(least, ratio · r)` to a solid or another tube. Near a run's flat end it measures the end ring, not a sphere. Only a run's own mount and its fittings are excused, and only within `r + gap + 1` of the end.
+</Accordion>
+
+<Accordion title="mountsOf and terminals — floating flanges">
+  Find the nearest anchored shape to every tube end rim (12 points at the flange radius) and list every end not within 0.15 of it — a flange standing off its port, a flat flange on a curved body, a cable stopping beside the bundle.
+</Accordion>
+
+<Accordion title="looseEnds — dangling cable ends apart">
+  Lists every tube end that, in the fully-apart state, touches no solid of another owner that moves with it. Ends marked `free` are reported separately as a deliberate list.
+</Accordion>
+
+<Accordion title="supports — floating solids">
+  Builds a contact graph of solids and rigid tubes and lists every solid not connected to the ground. Also lists `hanging` rigid tubes that connect to nothing held. Pairs sunk more than `sunk` (default 0.5) into each other fail unless they share an owner or one is `seated`.
+</Accordion>
+
+<Accordion title="solidClearances — housing sweeps">
+  Poses every solid in each explode state and checks surface points against every other solid's `sdf`. Anything more than `sunk` inside fails. Run at state 1 and in every replayed and prefix state.
+</Accordion>
+
+<Accordion title="seats — saddle pads apart">
+  Lists every `seated` shape cut to a host that moves with another assembly. A saddle belongs to its host's assembly — the moving line meets it on its flat face.
+</Accordion>
+
+<Accordion title="selfOverlaps — folded tube chunks">
+  Checks each drawn tube chunk against itself. Where the screen centreline turns inside the tube's own screen half-width, the ribbon's inner edge runs backwards and the outline crosses itself.
+</Accordion>
+
+<Accordion title="wobble — stalled tone bands">
+  Samples `dr/ds` of every recorded `curve` at 20 points per segment and lists `s` values where it turns. Any curved body smoothed without an analytic `slope` is listed here if its tone bands would stall.
+</Accordion>
+
+<Accordion title="folds — pinched pipe bends">
+  Lists every route whose screen direction turns more than `fold` degrees within four radii while its real turn is under `turn` (a cusp), and every bend that turns more than 90° on screen round a radius under `pinch` × the tube's screen radius.
+</Accordion>
+
+<Accordion title="crowding — ends and bends landing on lines">
+  Lists every place where a route's bend or end lands on another route's outline on screen — closer than `gap` px or overlapping, with both lines visible there. These read as a joint or a line threaded through another, whatever the true depth.
+</Accordion>
+
+<Accordion title="coverage — stand-in shapes">
+  Compares the screen box of what each item draws with the screen box of its recorded shapes. Items whose shapes cover less than `least` (default 0.6) of their drawing are listed as stand-ins.
+</Accordion>
+
+<Accordion title="depthOrder — wrong drawing order">
+  Checks the final sort order in every state. At rest and in every replayed spring frame, every wrong pair is a problem: a clean misorder, an interlock, or a pair no key of the form `k + lift · share` can hold.
+</Accordion>
+
+## report and failures
+
+```js
+const result = A.audit(R, P, options);
+console.log(A.report(result));
+const failCount = A.failures(result);
+```
+
+`report(result)` formats the full audit as a readable string. `failures(result)` counts the checks that should fail the build (non-zero exits `auditOrExit`).

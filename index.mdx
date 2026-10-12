@@ -1,20 +1,88 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "Anatomy: Crafted Isometric Figures for Developers"
+sidebarTitle: "Home"
+description: "Anatomy is an agent skill for Claude Code, OpenCode, and Codex that builds interactive isometric SVG illustrations explaining technical ideas as real physical machines."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+Anatomy is an agent skill that turns technical concepts into crafted, interactive isometric figures. Ask your AI coding agent to explain a token bucket, a CDN cache, or a database connection pool — Anatomy invents the right physical machine, builds it from dozens of precise parts, adds live readouts and calm motion, and delivers standalone HTML, SVG files, or React components that you own.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install Anatomy and generate your first figure in under a minute.
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    All install paths: skills CLI, git clone, or ZIP download.
+  </Card>
+  <Card title="How It Works" icon="gears" href="/guides/how-it-works">
+    Learn how the skill turns concepts into crafted machines.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Full reference for the drawing kit, extensions, and tools.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## What Anatomy makes
+
+Every figure is a real, well-made physical object whose working mechanism *is* the concept being explained. A cache key becomes a pin-tumbler lock. A connection pool becomes a gantry plotter. Figures ship as standalone HTML pages, lone SVG files, or React/Next.js components.
+
+<CardGroup cols={3}>
+  <Card title="SVG Figures" icon="draw-polygon" href="/guides/output-types">
+    Solid isometric parts with four-tone shading, painter's-order depth, a framed card with live readout, and eased motion. Zero dependencies.
+  </Card>
+  <Card title="WebGL Shaders" icon="fire" href="/advanced/webgl-shaders">
+    Fire, exhaust, water, caustics, and lamp light layered inside the isometric drawing. The SVG still reads without WebGL.
+  </Card>
+  <Card title="3D Mode (beta)" icon="cube" href="/advanced/3d-mode">
+    Parts that turn, hinge, slide, or break off in real 3D — re-projected and re-shaded every frame by the kit's own rules.
+  </Card>
+</CardGroup>
+
+## Get started
+
+<Steps>
+  <Step title="Install the skill">
+    Add Anatomy to your agent with the skills CLI — globally for you, or just for the current project.
+
+    ```bash
+    npx skills add wheresryan22/anatomy -g -a claude-code
+    ```
+  </Step>
+  <Step title="Ask for a figure">
+    In Claude Code, use the `/anatomy` slash command and describe what you want to explain:
+
+    ```text
+    /anatomy explain how a token bucket rate limiter works, interactive
+    ```
+  </Step>
+  <Step title="Receive your figure">
+    Anatomy delivers a Node build script and the standalone HTML page it writes, or React geometry modules and components if you asked for React. Open the `.html` file in a browser to see it immediately.
+  </Step>
+  <Step title="Verify and iterate">
+    Run the build with `--audit` to prove geometry correctness, use the capture scripts for close-up screenshots, and iterate on the design.
+
+    ```bash
+    node examples/dial-indicator/build.mjs --audit
+    ```
+  </Step>
+</Steps>
+
+## Example figures
+
+<CardGroup cols={2}>
+  <Card title="Dial Indicator" icon="gauge" href="/examples/dial-indicator">
+    The smallest example — a dial gauge on a stand over gauge blocks. About 300 lines, a perfect starting point.
+  </Card>
+  <Card title="Raptor Engine" icon="rocket" href="/examples/raptor-engine">
+    A Raptor 2 engine in a test stand with WebGL plume and shock. The reference for dense pipework and shaders.
+  </Card>
+  <Card title="Ripple Tank" icon="water" href="/examples/ripple-tank">
+    A school ripple tank with two WebGL layers driven by a dispersion and optics model.
+  </Card>
+  <Card title="Turning Dial" icon="rotate" href="/examples/turning-dial">
+    The 3D mode: a combination dial that turns in true 3D with a robot hand on it.
+  </Card>
+</CardGroup>
+
+<Note>
+  Anatomy has **zero npm dependencies**. The kit uses only Node.js built-in modules — nothing to `npm install`. Node.js 20.10 or later is required.
+</Note>

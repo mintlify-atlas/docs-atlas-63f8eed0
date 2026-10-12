@@ -1,0 +1,208 @@
+---
+title: "Anatomy example figures: eight complete references"
+sidebarTitle: "Overview"
+description: "Eight complete Anatomy figures covering every output type — pure SVG, WebGL shaders, 3D mode and React — with build commands and links to each page."
+---
+
+The examples directory ships eight complete, production-quality Anatomy figures. Each one is a reference implementation, not a demo stub: it uses real geometry, a real motion model, and passes the same audit checks that production figures must pass. Read the source of the simplest one (`dial-indicator`) before writing your first figure from scratch. The built HTML pages are committed alongside their build scripts, so you can open any `.html` in `examples/` directly in a browser to try the figure without running a build.
+
+<CardGroup cols={2}>
+  <Card
+    title="Dial Indicator"
+    icon="gauge"
+    href="/examples/dial-indicator"
+  >
+    The smallest example at roughly 300 lines. A dial gauge on a post and arm above a sliding carriage of three gauge blocks. Start here when learning the kit.
+  </Card>
+  <Card
+    title="Raptor Engine"
+    icon="rocket"
+    href="/examples/raptor-engine"
+  >
+    A Raptor 2 in a test stand — about 478 geometry items, 11 hover-apart assemblies, and a WebGL plume with shock diamonds and steam. The reference for dense pipework and the audit.
+  </Card>
+  <Card
+    title="Ripple Tank"
+    icon="water"
+    href="/examples/ripple-tank"
+  >
+    A school ripple tank on tall legs. Two WebGL layers — lamp light and caustics on the paper screen, reflections in the water — driven by a dispersion and optics model in `model.mjs`.
+  </Card>
+  <Card
+    title="Turning Dial"
+    icon="rotate"
+    href="/examples/turning-dial"
+  >
+    The 3D mode (beta). About 90 parts re-projected and re-shaded every frame as you drag a combination dial. Includes a `stress.mjs` with 380 parts for performance measurement.
+  </Card>
+  <Card
+    title="Desk Computer"
+    icon="desktop"
+    href="/examples/overview"
+  >
+    A 1984-style desk computer with a CRT drawn in the plane of the case front. About 85 solids. Type on the keyboard and switch it off to collapse the screen to a line and a dot. No separate doc page — see the build script in `examples/desk-computer/`.
+  </Card>
+  <Card
+    title="Arcade Cabinet"
+    icon="gamepad-2"
+    href="/examples/overview"
+  >
+    An upright arcade cabinet, side panel off. About 240 solids and 15 cables. Drop a quarter to trace the coin path from chute to cash box and wake the board. No separate doc page — see `examples/arcade-cabinet/`.
+  </Card>
+  <Card
+    title="Test Rig"
+    icon="flask-conical"
+    href="/examples/overview"
+  >
+    A React/Next.js figure: 53 solids showing a glass button on a spring-mounted carriage, a finger probe on a rail, and a dial gauge reading the lean. No build script — copy the source into a React app. No separate doc page — see `examples/test-rig/`.
+  </Card>
+  <Card
+    title="Spot Plate"
+    icon="circle-dot"
+    href="/examples/overview"
+  >
+    A second React/Next.js figure: six pairs of glass drops on a spot plate that merge into one piece as a fan of feeler blades opens. Each drop pair is drawn from a single distance field. No separate doc page — see `examples/spot-plate/`.
+  </Card>
+</CardGroup>
+
+## At a glance
+
+The table below summarises the key facts for each example. "Solids" counts named geometry items (solids, tubes, prisms, and lathe bodies). "Output" is the build target. The audit column marks examples where `--audit` runs the full geometry check.
+
+| Example | Solids | Output type | WebGL | 3D mode | Build command |
+|---|---|---|---|---|---|
+| `dial-indicator` | ~50 | SVG, standalone HTML | — | — | `node examples/dial-indicator/build.mjs` |
+| `desk-computer` | ~85 | SVG, standalone HTML | — | — | `node examples/desk-computer/build.mjs` |
+| `arcade-cabinet` | ~240 + 15 cables | SVG, standalone HTML | — | — | `node examples/arcade-cabinet/build.mjs` |
+| `raptor-engine` | ~478 | SVG + WebGL, standalone HTML | ✓ plume, shock, steam | — | `node examples/raptor-engine/build.mjs` |
+| `ripple-tank` | apparatus | SVG + WebGL, standalone HTML | ✓ 2 layers | — | `node examples/ripple-tank/build.mjs` |
+| `test-rig` | 53 | React/Next.js components | — | — | none — copy into React app |
+| `spot-plate` | 6 drop pairs | React/Next.js components | — | — | none — copy into React app |
+| `turning-dial` | ~90 live 3D | SVG + 3D, standalone HTML | ✓ camera | ✓ beta | `node examples/turning-dial/build.mjs` |
+
+## Running a build
+
+<Steps>
+  <Step title="Run the build script">
+    Each framework-free example has a `build.mjs` at its root. Run it with Node.js 20.10 or later from the repository root. No `npm install` is needed — the kit uses only Node's built-in modules.
+
+    ```sh
+    node examples/dial-indicator/build.mjs
+    ```
+
+    This writes `dial-indicator.html` next to the script.
+  </Step>
+  <Step title="Build the light theme">
+    Every example supports a `--light` flag. Without it you get the dark theme.
+
+    ```sh
+    node examples/dial-indicator/build.mjs --light
+    ```
+
+    This writes `dial-indicator-light.html`.
+  </Step>
+  <Step title="Open the result">
+    The built pages are committed, so you can open them immediately — no build required to try them.
+
+    ```sh
+    open examples/dial-indicator/dial-indicator-light.html
+    ```
+
+    Or just double-click any `.html` in the `examples/` subdirectories.
+  </Step>
+</Steps>
+
+<Note>
+  The `raptor-engine` build takes a few minutes because of the density of its geometry and the number of tube pieces it generates. This is expected — progress is printed as each section completes.
+</Note>
+
+## Running the geometry audit
+
+Three examples support `--audit` to prove their geometry: nothing passes through anything, every pipe end sits on a mount, and every overlap is in correct depth order.
+
+```sh
+node examples/raptor-engine/build.mjs --audit
+node examples/arcade-cabinet/build.mjs --audit
+node examples/turning-dial/build.mjs --light --audit
+```
+
+<Warning>
+  The 3D orbit audit (`turning-dial`) is slow: plan 15 to 20 minutes for a full 30-part orbit check. It starts headless Chrome and renders every frame of the orbit, checking re-projection and shading fidelity at each step. See [`references/3d.md`](https://github.com/wheresryan22/anatomy/blob/main/references/3d.md) for details.
+</Warning>
+
+The raptor and arcade cabinet audits check that no pipe or cable passes through a solid, every tube end connects to a mount point, and every overlapping solid is painted in the correct back-to-front order. The audit exits non-zero on any failure and prints the names of the offending items.
+
+## React examples
+
+The `test-rig` and `spot-plate` examples are production figures taken directly from a React/Next.js site. They have no build script and produce no standalone HTML.
+
+<Tabs>
+  <Tab title="test-rig">
+    The test-rig figure is split across several TypeScript modules:
+
+    ```
+    examples/test-rig/
+    ├── geometry.ts    — all 53 solids, returns a sorted array of paint items
+    ├── rig.ts         — the spring and probe model (physics, no DOM)
+    ├── pose.ts        — maps the model state to geometry transforms
+    ├── view.ts        — projection constants and helpers
+    ├── art.tsx        — server component: renders the static SVG from geometry.ts
+    ├── live.tsx       — client component: attaches pointer and keyboard listeners
+    └── figure.tsx     — the page-level wrapper that composes art and live
+    ```
+
+    To use it, copy the whole `test-rig/` directory into your React app and import `Figure` from `figure.tsx`. Install `kit/react/` alongside it. The figure uses `kit/react/draw.tsx` for the server-side SVG render and `kit/react/live.tsx` for the client hooks.
+  </Tab>
+  <Tab title="spot-plate">
+    The spot-plate figure uses a distance-field technique to draw each drop pair from a single scalar field, then morphs the six pairs as a fan of feeler blades opens:
+
+    ```
+    examples/spot-plate/
+    ├── geometry.ts    — the spot plate body and blade fan
+    ├── drops.ts       — distance-field drop rendering for each pair
+    ├── fan.ts         — the blade fan model and morph state
+    ├── rig.ts         — combined model: blades + drops
+    ├── art.tsx        — server component
+    ├── live.tsx       — client component
+    └── figure.tsx     — page wrapper
+    ```
+
+    Copy the `spot-plate/` directory into your React app. The setup is the same as test-rig: import `Figure` from `figure.tsx` and ensure `kit/react/` is available.
+  </Tab>
+</Tabs>
+
+<Tip>
+  The React examples import from `kit/react/draw.tsx` and `kit/react/live.tsx` using relative paths. When copying into your project, make sure the relative path from your figure directory to `kit/react/` resolves correctly, or update the import paths to match your project structure.
+</Tip>
+
+## The stress figure
+
+The `turning-dial` example ships a second script, `stress.mjs`, that builds a 380-part robot hand in a cluttered workshop. It is not a figure intended for display — its purpose is performance measurement.
+
+```sh
+node examples/turning-dial/stress.mjs --light
+```
+
+This writes `turning-stress-light.html`. Open it in a browser with the performance profiler running to measure frame time at your target viewport width. The README notes approximately 20 fps at 1440 px wide on a loaded desktop and 13–15 fps on a throttled mobile profile.
+
+## Which example to read first
+
+<Accordion title="I want to understand the core kit API">
+  Read `examples/dial-indicator/build.mjs`. At roughly 300 lines it uses every core primitive — `fitProjection`, `slabOf`, `cylinder`, `ring`, `topTicks`, `radialTicks`, `figureSvg`, `plateHtml`, and `pageHtml` — without any of the advanced features. The live script that follows it is equally readable and shows how the motion model connects to the DOM.
+</Accordion>
+
+<Accordion title="I want to understand pipes and tubes">
+  Read `examples/raptor-engine/build.mjs`. It is the reference for `tube.mjs` (`tubePieces`, `tubeSvg`) and `lathe.mjs` (`solidOf`, `disc`, `frameAlong`). It also shows how to structure a large figure into named assemblies and how the audit recorder collects shapes for the geometry check.
+</Accordion>
+
+<Accordion title="I want to understand WebGL shaders">
+  Read `examples/ripple-tank/build.mjs` and its `model.mjs`. The ripple tank has two registered WebGL layers: one for caustics on the paper screen and one for reflections in the water. `model.mjs` contains the pure dispersion and optics model that drives both layers without touching the DOM.
+</Accordion>
+
+<Accordion title="I want to understand the 3D mode">
+  Read `examples/turning-dial/build.mjs`. It imports from `kit/turn-build.mjs` and calls `turning()` to declare which parts rotate. The `stress.mjs` in the same directory shows how to push part counts to the limit of the beta runtime.
+</Accordion>
+
+<Accordion title="I want to understand React integration">
+  Read `examples/test-rig/` in full. It is the simpler of the two React examples and clearly separates the server component (`art.tsx`), the client component (`live.tsx`), the geometry (`geometry.ts`), and the physics model (`rig.ts`).
+</Accordion>

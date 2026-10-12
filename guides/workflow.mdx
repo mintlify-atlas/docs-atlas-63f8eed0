@@ -1,0 +1,204 @@
+---
+title: "Anatomy workflow: from concept to verified figure"
+sidebarTitle: "Workflow"
+description: "The 10-step Anatomy workflow: size the request, collect real numbers, invent the object, list 40+ parts, plan, build, paint, frame, animate, and verify."
+---
+
+Anatomy follows a strict sequence whenever it builds a figure. Most of the quality is decided in the first three steps — before any geometry is written. Claude works through all ten steps in order, tells you which size tier the request is before starting, and checks in if any step runs more than twice its share of the time estimate.
+
+<Note>
+Open the closest example before starting. Each example in `examples/` is a working reference for its output type and complexity level. Claude does this automatically; if you are building manually, do the same.
+</Note>
+
+## Size tiers
+
+Before any other work, Claude tells you which tier the request is and roughly how long it will take. This sets expectations and prevents surprises.
+
+| Tier | Scope | Parts | Time estimate |
+|---|---|---|---|
+| **Figure** | One mechanism, at most one WebGL layer | 40–80 | About 30–90 minutes |
+| **Hero** | A dense object, several WebGL layers, or one 3D subject | 80–150 | About 2–4 hours |
+| **Epic** | A whole vehicle, building, or plant with many moving systems; or 3D mode on more than one subject | 150+ | 6 hours or more |
+
+<Warning>
+Claude does not start an Epic without explicit confirmation. For an Epic request, it gives the estimate, proposes a Hero version that keeps the core of the idea, lists what the full version would add, and waits for your choice. A working page that opens in the browser arrives within the first hour of any build, and Claude deepens it from there.
+</Warning>
+
+## The 10-step workflow
+
+<Steps>
+
+### Size it before you start
+
+Claude names the tier (Figure, Hero, or Epic), gives a rough time estimate, and — for an Epic — proposes a Hero version first. It runs `date` at the start and at each step, and reports progress when a step runs past twice its share.
+
+Whatever the size, a working page that opens in the browser arrives within the first hour. Depth comes after.
+
+### Truth first
+
+Collect the real numbers and behaviour of the thing being explained: sizes, counts, thresholds, curves. The readout, motion, and caption must all be true. If possible, write the model as a small pure module — like `rig.ts` in the test-rig example — and drive everything from it. A figure whose needle reads a wrong value, or whose spring uses a made-up stiffness, fails this step.
+
+### Invent the object
+
+Pick a machine, tool, instrument, or piece of furniture whose mechanism maps one-to-one onto the concept. Say in one sentence what moves and what that motion means.
+
+Two anti-patterns to avoid here:
+- **Too abstract**: floating plates or labelled boxes don't read as anything.
+- **Too bland**: one large slab with a few lines has no volume, no parts, and nothing to discover.
+
+The fix for both is the same: a recognisable machine, built from many small, precise, purposeful parts. Never copy a reference image — take its finish, not its object.
+
+### Parts list
+
+Write at least 40 named parts (40–80 for a Figure, 80–150 for a Hero), grouped into:
+
+- **Base** — plate, feet, groove, corner screws, label plate, ruler strip
+- **Structure** — posts, rails, frame bars, end stops
+- **Mechanism** — carriage, bushings, springs, plunger, needle
+- **Controls** — knurled knobs, thumb screws, crown
+- **The subject** — the one lit part the reader should watch
+
+Each part sits on another part. `references/craft.md` has a vocabulary of parts with recipes in code. The quality of the figure is largely decided here, before any geometry.
+
+<Tip>
+Every creation is highly detailed, even for a small idea: a quick explainer is still a dense, real machine. What scales with the size tier is how far you push the 4× sweep — over the subject for a Figure, over the whole drawing for a Hero or Epic.
+</Tip>
+
+### Plan the world
+
+Use world units of about 1 px of the real thing: `x` and `y` on the floor, `z` up. Lay out plans as rounded rectangles `{x, y, w, d, r}` and circles.
+
+Choose the camera:
+- **Azimuth**: 45° by default; 35–60° to show the long side
+- **Elevation**: 30° by default; raise it (like the ripple tank's 44°) to look into something open
+
+Then fit the projection with `fitProjection(points, width, height, { pad, azimuth })`. Typical viewboxes are 600 × 340–380.
+
+### Build geometry once
+
+Precompute every static path in a geometry module with the kit: `slabOf`, `cylinder`, `extrude`, `planOutline`, `topTicks`, `knurl`, `coil`, `radialTicks`, and so on.
+
+- Round parts on any axis come from `kit/lathe.mjs`
+- Pipes and cables come from `kit/tube.mjs`
+- Moving parts are built once at rest and moved with `translateAlong`
+- Only parts whose shape changes are rebuilt per frame
+
+Once a figure has pipes, cables, and round parts, stop tuning painter's keys by eye. Record each item's shape with `A.recorder(P, { order, spring })`, let `A.settle(R, P)` measure true depth wherever two items overlap, and end the build with `A.auditOrExit(R, P)`. Route pipes before drawing them: real ports at both ends, legs along the structure, crossings on straights, collars gapping the pipe.
+
+### Paint back to front, bottom to top
+
+Sort repeated parts with `depthOf`. Split anything that wraps another part into a back half and a front half: the springs around a rod, the bars of a frame around a carriage. A moving part is drawn in the slot where it physically sits.
+
+The painter's order for a typical rig looks like:
+
+```text
+halo → feet → base plate → ruler strip
+back frame bars → back coil halves → rods
+carriage → glass button → front coil halves → front bars
+dial gauge → needle
+```
+
+For dense figures, `A.settle` sets the painter's keys from geometry. The first Raptor had 323 depth-order problems with hand-set keys; measured keys took that to zero.
+
+### Frame it
+
+Put the figure in a card using `plateHtml`:
+
+- **Fig n** at top left
+- **Short title** at top right
+- **Interaction hint** at bottom left
+- **Live readout** at bottom right
+
+Legend keys and a true caption go under the card. Words stay out of the drawing itself — at most one tiny engraved label, using `FaceText`.
+
+```js
+const body = k.plateHtml({
+  fig: "Fig 1",
+  title: "Dial indicator",
+  hint: "Hover to slide the carriage",
+  readout: `block 1 · reads ${BLOCKS[0].toFixed(1)} px`,
+  keys: [
+    { mark: "lit", label: "Plunger and needle: what moves when the height changes" },
+    { mark: "raised", label: "Three gauge blocks, 18, 14 and 10 tall" },
+  ],
+  caption:
+    "A dial indicator on a surface plate. Slide the carriage and the plunger rides up or down onto the block beneath it; one turn of the needle is 20 px of travel, so every block reads its own height.",
+  body: `<div class="iso-stage" tabindex="0" role="slider" …>${svg}</div>`,
+});
+```
+
+### Make it live
+
+Use calm time-based motion: exponential follow or real springs. An idle tour loops when nobody touches it. The figure responds to pointer and keyboard, stops when offscreen (`IntersectionObserver`), and goes still under `prefers-reduced-motion`.
+
+Write attributes on refs — don't re-render per frame:
+
+```js
+carriage.setAttribute("transform", translateAlong(P, [x, 0, 0]));
+plunger.setAttribute("transform", translateAlong(P, [0, 0, tip.at]));
+needle.setAttribute("d", needleAt((tip.at - BASE) / PER_TURN));
+```
+
+The live loop checks visibility and stops when the figure is offscreen:
+
+```js
+frame = visible && !settled ? requestAnimationFrame(tick) : 0;
+```
+
+Keyboard events move to named stops; pointer events ease continuously across the range. Both resume the idle tour after a timeout. See `references/motion.md` for the full patterns.
+
+### Verify like a critic
+
+The owner finds faults by zooming in, so you zoom in first.
+
+<Tabs>
+  <Tab title="Screenshot checks">
+    Capture desktop, phone (390 px wide), hover state, and several moments of motion with `scripts/capture.mjs`. Use `scripts/drive.mjs` for sequences, the apart pose, and the `--no-webgl` fallback.
+
+    ```sh
+    node scripts/capture.mjs page.html --out shots/page.png
+    node scripts/drive.mjs page.html --sequence apart --out shots/apart.png
+    ```
+  </Tab>
+  <Tab title="Geometry audit">
+    With pipes, cables, or round parts, `node build.mjs --audit` must end `audit passed`, every failing line at 0: clearance at rest and apart, terminals, loose ends, folds, self-overlap, crowding, stand-in shapes, support, wobble, saddles, and depth order.
+
+    ```sh
+    node examples/raptor-engine/build.mjs --audit
+    # → audit passed
+    ```
+  </Tab>
+  <Tab title="Line-end check">
+    Every seam, rule, rib, tick, and pointer must end on a stroke, a dot, or an outline:
+
+    ```sh
+    node scripts/lines.mjs page.html --out shots/lines.png
+    # → line ends: 0
+    ```
+
+    Run this on both the dark and light pages, and in every resting pose.
+  </Tab>
+  <Tab title="4× close-ups">
+    Review 4× close-ups of every junction in both themes, assembled and apart: every flange, tee, elbow, clamp, valve, bellows, band, saddle, ball joint, crossing, curved body, place a texture ends, and every sliding rod at rest and full stroke.
+
+    Ask: is it instantly a real object? Is it rich in small parts with volume? Does every line end on something? Is it rewarding at 4×, with no bare face or empty corner?
+  </Tab>
+</Tabs>
+
+</Steps>
+
+## What "highly detailed" means at each size
+
+The detail level is not optional — it applies to every figure, however small the idea. What scales is the scope of the 4× sweep:
+
+<CardGroup cols={3}>
+  <Card title="Figure" icon="magnifying-glass" href="/guides/craft-rules">
+    4× sweep over the subject and mechanism. Every screw, seam, bevel, bushing, label plate, cable, scale, and the parts that hold the parts. At 1× it reads as one clear machine. At 4× every region still has something true to find.
+  </Card>
+  <Card title="Hero" icon="magnifying-glass-plus" href="/guides/craft-rules">
+    4× sweep over the whole drawing. A dense object — several WebGL layers, or one 3D subject — with 80–150 parts and no bare face or empty corner anywhere in the card.
+  </Card>
+  <Card title="Epic" icon="layer-group" href="/guides/craft-rules">
+    A whole vehicle, building, or plant. Build it only when explicitly chosen. The Hero version delivers the core; the Epic adds the rest of the systems. Do not start without confirmation.
+  </Card>
+</CardGroup>

@@ -1,0 +1,247 @@
+---
+title: "Anatomy output types: HTML, SVG, WebGL, and React"
+sidebarTitle: "Output Types"
+description: "Anatomy outputs standalone HTML, lone SVG files, SVG plus WebGL shaders, and React/Next.js components — here is how each works and when to choose it."
+---
+
+All three output kinds share one kit, one camera, and one set of craft rules. The choice of output type is a deployment decision — it affects file count, how styles are loaded, and whether the figure needs React or a browser that supports WebGL, but not the drawing itself.
+
+## Standalone HTML and SVG
+
+The default output for a blog post, a standalone page, a documentation site, or any non-React project is a Node build script that writes a self-contained HTML page next to itself.
+
+The script imports `kit/iso-kit.mjs` and `scripts/inline-kit.mjs`, assembles path strings with the kit's helpers, wraps them with `figureSvg` and `plateHtml`, and writes the page with `pageHtml`. The kit is inlined into the page as a `<script>` tag — no separate file to serve, no `npm install` for the reader.
+
+Here is the complete build script from `examples/dial-indicator/build.mjs`:
+
+```js
+import { writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import * as k from "../../kit/iso-kit.mjs";
+import { kitScript } from "../../scripts/inline-kit.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const theme = process.argv.includes("--light") ? "light" : "dark";
+
+const WIDTH = 600;
+const HEIGHT = 380;
+
+const PLATE = { x: -128, y: -64, w: 262, d: 128, r: 8 };
+const P = k.fitProjection(
+  [...k.boxCorners(PLATE, -17, 0), [POST[0], POST[1], POST_TOP + 2], [DIAL[0] + DIAL_R, 0, DIAL_TOP]],
+  WIDTH,
+  HEIGHT,
+  { pad: 30, azimuth: 42 },
+);
+
+// ... geometry functions (plate, rails, fixture, carriage, dial) ...
+
+const svg = k.figureSvg({
+  width: WIDTH,
+  height: HEIGHT,
+  label: "A dial indicator on a surface plate. …",
+  body: [
+    plate(),
+    rails(),
+    fixture(),
+    `<g data-part="carriage" transform="${k.translateAlong(P, [startX, 0, 0])}">${carriage()}</g>`,
+    `<g data-part="plunger" transform="${k.translateAlong(P, [0, 0, CARRIAGE_TOP + BLOCKS[0]])}">${plunger()}</g>`,
+    dial(),
+    `<path data-part="needle" class="iso-line" data-tone="lit" data-free="start" d="${needleAt(BLOCKS[0] / PER_TURN)}" style="stroke-width:1.1"/>`,
+  ],
+});
+
+const live = `/* … live JS using setAttribute, requestAnimationFrame, IntersectionObserver … */`;
+
+const body = k.plateHtml({
+  fig: "Fig 1",
+  title: "Dial indicator",
+  hint: "Hover to slide the carriage",
+  readout: `block 1 · reads ${BLOCKS[0].toFixed(1)} px`,
+  keys: [
+    { mark: "lit", label: "Plunger and needle: what moves when the height changes" },
+    { mark: "raised", label: "Three gauge blocks, 18, 14 and 10 tall" },
+  ],
+  caption: "A dial indicator on a surface plate. …",
+  body: `<div class="iso-stage" tabindex="0" role="slider" aria-label="Dial indicator: arrow keys move the carriage from block to block" aria-valuemin="0" aria-valuemax="18" aria-valuenow="18">${svg}</div>`,
+});
+
+writeFileSync(
+  join(HERE, theme === "light" ? "dial-indicator-light.html" : "dial-indicator.html"),
+  k.pageHtml({ title: "Dial indicator", theme, body, script: kitScript() + live }),
+);
+console.log("wrote", theme === "light" ? "dial-indicator-light.html" : "dial-indicator.html");
+```
+
+Run it with `node examples/dial-indicator/build.mjs`. Add `--light` for the light theme. The built page is a single `.html` file with all styles and the kit inlined.
+
+### Lone SVG file
+
+For a figure you want to embed directly in a `<img>` tag or paste into a Figma file, use `figureSvg` with the `standalone` option. This embeds the CSS tokens into the SVG file itself, so it displays correctly without a surrounding page:
+
+```js
+// Dark standalone SVG
+const darkSvg = k.figureSvg({ width, height, body, standalone: "dark" });
+
+// Light standalone SVG
+const lightSvg = k.figureSvg({ width, height, body, standalone: "light" });
+
+writeFileSync("figure-dark.svg", darkSvg);
+writeFileSync("figure-light.svg", lightSvg);
+```
+
+<Note>
+A standalone SVG has no live motion — it is a static snapshot. For interactive figures, use the full HTML page or the React output.
+</Note>
+
+## SVG + WebGL shaders
+
+Use a WebGL shader for what lines cannot draw: fire and exhaust, water and caustics, real lamp light, glow, steam. The parts stay SVG; the effect runs in a canvas between two SVG layers.
+
+### The three-layer stack
+
+The WebGL output uses three layers stacked on top of each other in screen space:
+
+1. **Back SVG** — parts the effect passes in front of (the stand, the base plate, the pipes behind the plume)
+2. **Canvas** — the WebGL shader, with `pointer-events: none` so interaction passes through to the SVG
+3. **Front SVG** — parts that cover the effect (structure in front of the plume, clamps over a flame)
+
+When a part is partly in front of and partly behind the effect, it is split. Each half goes into the correct SVG layer.
+
+The build script adds `glScript()` to the inlined script bundle:
+
+```js
+import { kitScript, glScript } from "../../scripts/inline-kit.mjs";
+
+// …
+
+writeFileSync(
+  join(HERE, "raptor-engine.html"),
+  k.pageHtml({
+    title: "Raptor 2 test stand",
+    theme,
+    body,
+    script: kitScript() + glScript() + live,
+  }),
+);
+```
+
+### When to use WebGL
+
+A shader earns its place only when lines genuinely cannot draw the effect. Anatomy uses WebGL for:
+
+- **Exhaust plumes and shock diamonds** (`raptor-engine`)
+- **Water surface — reflections and refraction** (`ripple-tank`)
+- **Caustics on a paper screen below a water tank** (`ripple-tank`)
+- **Lamp light pool and shadows** (`ripple-tank`)
+- **LED glow and sparks following a moving part** (`turning-dial`)
+
+<Info>
+The SVG must still read without WebGL. The `--no-webgl` capture test (`scripts/drive.mjs --no-webgl`) checks this. Under reduced motion, every figure goes still and WebGL renders one frozen frame.
+</Info>
+
+### World space, same camera
+
+Every shader point is built from `onFloor`, `onWallX`, and `onWallY`, or by marching the pixel's ray in the kit's GLSL camera (`GLSL_ISO`). This makes the effect sit inside the drawing rather than floating on top of it — lines from the SVG layers and pixels from the shader register exactly on shared isometric planes.
+
+## React and Next.js
+
+Copy `kit/` into the project (for example as `components/iso/`). The React output splits geometry from motion: static art lives in a server component, and a single `"use client"` component handles interaction.
+
+### File layout
+
+```text
+components/iso/           the kit: iso-kit.ts, iso.css, react/draw.tsx, react/live.tsx
+components/figures/rig/
+  model.ts       pure model: true numbers, springs, readout text (no DOM)
+  view.ts        world layout constants, the projection P, helpers
+  geometry.ts    every static path, computed once at module load
+  frame.ts       paths for parts that change shape each frame
+  art.tsx        server component: static parts as JSX, passed to the live component
+  live.tsx       "use client": refs, loop, pointer, keyboard, aria, readout
+  figure.tsx     <Plate fig title hint readout keys caption><RigArt /></Plate>
+```
+
+`examples/test-rig/` follows this layout exactly.
+
+### Server component for static art
+
+```tsx
+// art.tsx — server component, no "use client"
+import { Solid, Line, Dots } from "components/iso/react/draw";
+import { BASE_SLAB, RAIL_PATHS, DIAL_PATHS } from "./geometry";
+
+// Build as JSX constants — these are plain elements, not components
+const BASE = <g key="base"><Solid paths={BASE_SLAB} tone="mid" /></g>;
+const RAILS = <g key="rails">{RAIL_PATHS.map((p, i) => <Solid key={i} paths={p} tone="mid" />)}</g>;
+
+export function RigArt() {
+  // Pass element props to the client component
+  return <RigLive base={BASE} rails={RAILS} dial={<g key="dial">…</g>} />;
+}
+```
+
+### Client component for motion
+
+```tsx
+// live.tsx — "use client"
+"use client";
+import { useRef } from "react";
+import { useLoop, useReadout, useInView } from "components/iso/react/live";
+
+export function RigLive({ base, rails, dial }: { base: React.ReactNode, rails: React.ReactNode, dial: React.ReactNode }) {
+  const carriageRef = useRef<SVGGElement>(null);
+  const { say } = useReadout();
+  
+  useLoop((dt) => {
+    // Update carriage position on refs — no re-render
+    carriageRef.current?.setAttribute("transform", translateAlong(P, [x, 0, 0]));
+    say(`block ${i + 1} · reads ${height.toFixed(1)} px`);
+  });
+
+  return (
+    <IsoFigure width={WIDTH} height={HEIGHT}>
+      {base}
+      {rails}
+      <g ref={carriageRef}>{/* carriage static art */}</g>
+      {dial}
+    </IsoFigure>
+  );
+}
+```
+
+### The large-page key-warning trap
+
+On a big Next.js page the server payload is large, and React streams some element props as deferred (lazy) chunks. When a lazy chunk resolves to an element without a key, React logs "Each child in a list should have a unique key."
+
+Do both of these from the start:
+
+1. **Give the root of every element prop a stable key:** `const DIAL = (<g key="dial">…</g>)`, and `<React.Fragment key="sled">` for fragments.
+2. **Keep `"use client"` components out of server-built art.** Every client component inside a server tree becomes a lazy reference. Use plain `<g data-part="…">` for interactive parts and handle events with delegation in the live component.
+
+## Comparison
+
+| Output type | File count | npm deps | WebGL | React | Best for |
+|---|---|---|---|---|---|
+| Standalone HTML | 1 `.html` | 0 | Optional | No | Blog posts, docs, landing pages, standalone demos |
+| Lone SVG | 1 `.svg` | 0 | No | No | Static embeds, Figma, `<img>` tags |
+| SVG + WebGL | 1 `.html` | 0 | Yes | No | Figures with fire, water, caustics, or lamp light |
+| React / Next.js | Multiple `.tsx` + `.ts` | React 18+ | Optional | Yes | Docs sites, Next.js apps, figures shared across pages |
+
+## Choosing the right output
+
+<CardGroup cols={2}>
+  <Card title="Blog or article" icon="newspaper" href="/guides/workflow">
+    Use **standalone HTML**. One file, nothing to install, dark or light with `--light`. Run `node build.mjs` and drop the page into your site.
+  </Card>
+  <Card title="Docs site (non-React)" icon="book" href="/guides/workflow">
+    Use **standalone HTML** or a **lone SVG**. The SVG embeds as `<img src="figure.svg">` and works in any static site generator.
+  </Card>
+  <Card title="Next.js or React app" icon="react" href="/guides/how-it-works">
+    Use **React output**. Copy `kit/` into the project, keep geometry in `.ts` modules, build static art in a server component, and pass it as element props to one `"use client"` live component.
+  </Card>
+  <Card title="Landing page with fire or water" icon="fire" href="/guides/how-it-works">
+    Use **SVG + WebGL**. The shader earns its place when lines genuinely cannot draw the effect. The SVG still reads without WebGL, and reduced motion gets one still frame.
+  </Card>
+</CardGroup>

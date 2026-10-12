@@ -1,0 +1,304 @@
+---
+title: "Adding WebGL shaders to isometric Anatomy figures"
+sidebarTitle: "WebGL Shaders"
+description: "Learn when shaders earn their place, how the three-layer stack works, and how to author fire, water, light, and glow effects that register perfectly with SVG."
+---
+
+WebGL shaders let you place continuous-field effects — fire and exhaust, water surfaces, caustics, soft lamp light, smoke, and steam — inside an isometric figure so they read as part of the same object seen through the same camera. Two shipped examples do this: `examples/raptor-engine/` (a plume, shock, splash, and steam under a rocket engine) and `examples/ripple-tank/` (caustics, shadows, and a rippled water surface). Every rule on this page came from a bug that broke one of those figures.
+
+## When a shader earns its place
+
+Use a shader for things lines can't draw: emitted light and glow, fire and exhaust, water surfaces, caustics, soft shadows from a real lamp, smoke and steam. These are continuous fields, and they are the subject or what the subject does.
+
+<Warning>
+  Don't use a shader for solids (parts, edges, ticks, screws — those stay SVG), decoration (shimmer, background gradients, or noise added to look "rich"), or anything the SVG already shows well. A glowing LED is a `lit` dot, not a shader.
+</Warning>
+
+The SVG must still read on its own. The Raptor without WebGL still shows the engine, with a rim light and a CSS deck glow. The ripple tank draws its crests and nodal lines as SVG lines clipped to the tank's drawn outline, and hides them with `.rt-stage[data-gl] .rt-fallback { display: none }` once WebGL is running.
+
+## The three-layer stack
+
+A shader can't be depth-tested against SVG, so you order layers instead. The basic stack is three layers in one `position: relative` stage, all sharing the same `viewBox`:
+
+```
+back SVG     what the effect covers        (k.figureSvg: role="img" and the label)
+canvas       the effect                     (position:absolute; inset:0; pointer-events:none)
+front SVG    what covers the effect        (aria-hidden)
+```
+
+For every part, ask one question: is it ever covered by the effect, or does it cover the effect? Parts that are covered go in the back SVG; parts that cover go in the front SVG.
+
+When a part does both, you have three choices:
+
+- **Split the art.** Cut the part into pieces and send each piece to the layer and slot where it belongs. The ripple tank's motor cable is three groups of `tubePieces` — runs over the bridge, along the near rim, and down the left leg — each going to the correct layer.
+- **Model it in the shader.** If the part is a simple shape (box, cylinder, torus) in the back SVG, give the shader that shape as an occluder.
+- **Split the effect.** Add a second canvas above the front SVG. An analytic proxy of the occluding part decides, per sample, whether it goes to the back canvas (weight `1 − f`) or the front canvas (weight `f`). Each sample is drawn exactly once, so there is no seam.
+
+The CSS for the stack:
+
+```css
+.fx-stage { position: relative; touch-action: pan-y; }
+.fx-stage > svg, .fx-stage > canvas { display: block; width: 100%; height: auto; }
+.fx-stage > .fx-layer { position: absolute; inset: 0; height: 100% !important; pointer-events: none; }
+.iso:not([data-theme="light"]) .fx-gl { mix-blend-mode: screen; }
+```
+
+<Note>
+  Screen blending can only brighten. A canvas that must also darken what it covers — the ripple tank's water, which tints the paper seen through it — stays on normal premultiplied blending in dark. Only the paper-light canvas is screen-blended.
+</Note>
+
+## The world-space camera contract
+
+`kit/gl.mjs` prepends `GLSL_ISO` to your fragment. It declares the uniforms and functions that make the shader see the same camera as `iso()`.
+
+<Accordion title="GLSL_ISO uniforms and functions">
+
+| Name | What it is |
+|------|------------|
+| `uCanvas` | Canvas size in device pixels. |
+| `uView` | The viewBox size `[W, H]`. |
+| `uOrigin`, `uK` | The projection origin and screen units per world unit. |
+| `uCam` | `(sinA, cosA, sinE, cosE)` of the azimuth and elevation. |
+| `uTime` | The time you pass to `draw`. |
+| `viewOf(gl_FragCoord.xy)` | Device pixel → viewBox point (flips y). |
+| `project(vec3 p)` | World → viewBox, identical to the kit's `iso()`. |
+| `towardViewer()` | Unit 3D view direction `(cosA·cosE, sinA·cosE, sinE)`. |
+| `rayOf(vb)` | World point on the vertical plane through the origin that faces the camera. |
+| `pixelOf()` | World units per canvas pixel across the screen. |
+| `lightDir()` | The kit's light direction, equal to `lightOf(P)`. |
+| `onFloor(vb, z)` | World point on the horizontal plane at height `z` under this pixel. |
+| `onWallX(vb, x)` | World point on the vertical plane `x = const` under this pixel. |
+| `onWallY(vb, y)` | World point on the vertical plane `y = const` under this pixel. |
+| `hash12`, `hash13`, `noise2`, `noise3`, `fbm2`, `fbm3` | Hashes and value noise, plus 4-octave fBm. |
+| `window(x, a, b, soft)` | Smooth window: 1 inside `[a+soft, b−soft]`, 0 outside `[a−soft, b+soft]`. |
+| `tonemap(c, exposure)` | `1 − exp(−c·exposure)`. Use instead of `clamp`. |
+
+</Accordion>
+
+`onFloor` and the wall functions round-trip exactly with `iso()`: `project(onFloor(vb, z)) == vb`. That is what lets shader content register with SVG lines.
+
+<Warning>
+  Build everything from world points and world sizes. If you draw an effect in screen space — an ellipse sized by eye, a glow column in pixels — it will float above the floor, run through the deck, or keep the same shape when the camera changes.
+</Warning>
+
+## The glLayer() API
+
+```js
+import { GLSL_ISO, glCamera, glLayer, smooth, burst, settle } from "../../kit/gl.mjs";
+import { kitScript, glScript } from "../../scripts/inline-kit.mjs";
+```
+
+<ParamField path="glCamera(P)" type="object">
+  Returns `{ origin, k, cam }` for a kit projection. Works in Node and the browser. Put it in your page `DATA`.
+</ParamField>
+
+<ParamField path="glLayer(options)" type="object | null">
+  Compiles `GLSL_ISO + fragment` on `canvas` with a premultiplied-alpha WebGL1 context. Returns `{ gl, extensions, set(values), draw(values, time), clear() }`, or `null` when WebGL is missing or the shader fails to compile.
+
+  Options:
+  - `canvas` — the `<canvas>` element
+  - `fragment` — your GLSL fragment source
+  - `view` — `[W, H]` of the viewBox
+  - `camera` — `glCamera(P)`
+  - `uniforms` — array of uniform names sent per frame
+  - `fixed` — `{ name: value }` for uniforms set once at creation (geometry, theme constants)
+  - `extensions` — GLSL extensions to enable (e.g. `["GL_OES_standard_derivatives"]`)
+  - `maxRatio` — cap on device pixel ratio (default `1.5`)
+  - `onError` — callback for compile errors (default `console.error`)
+</ParamField>
+
+<ParamField path="draw(values, time)" type="void">
+  Resizes the canvas to its CSS box × `min(maxRatio, devicePixelRatio)`, sets camera uniforms, sets `uTime = time`, sets each value, and draws one full-screen triangle.
+</ParamField>
+
+<ParamField path="burst(age, rise, fall)" type="number">
+  One-shot event envelope: smoothstep attack then exponential decay. Use for flash, shock, ground ring, and shutdown pop. Never set a value to 1 in a single frame.
+</ParamField>
+
+<ParamField path="settle(state, target, dt, seconds, calm)" type="boolean">
+  Critically damped spring toward `target`. Returns `true` while still moving. Use for phase-level values like chamber pressure, heat, and lamp brightness.
+</ParamField>
+
+## No-pops rule: every uniform uses an envelope
+
+Nothing in the shader ever changes in a single frame. This is the hardest rule to hold and the most visible when broken.
+
+<Accordion title="Envelope patterns and the bugs they fixed">
+
+- **One-shot events use `burst`.** The first ignition flash went from 0 to full in one frame and whited out the card. Now every event (flash, shock, ground ring) uses `burst(sinceMain, 0.08, 0.13)`, a 50–90 ms attack with zero slope at onset.
+- **Phase changes are crossfades driven by the physical quantity.** A separate preburner term that died while the main plume grew read as an instant colour switch. Now colour, brightness, raggedness, tongue length, and splash are all functions of chamber pressure.
+- **Colour gets its own slow envelope.** Even driven by pressure, a colour change can cross its smoothstep window in under 230 ms. Hue has its own `settle` envelope (e.g., `settle(burn.hue, lit && burn.pc > 0.2 ? 1 : 0, dt, lit ? 0.32 : 0.5, calm)`) sent as `uHue`. Brightness is a separate `uGlow` computed in JS so it falls monotonically.
+- **Brightness during fade-out only falls.** When the Raptor shuts down, the plume flared back up as an orange flame because `mix(a, b, hue)` with `b < a` rose again as hue decayed. Fix: freeze the glow level when shutdown starts.
+
+</Accordion>
+
+## No hard spatial cut-offs
+
+Every shader term must reach exactly zero before any boundary — a bounding shape, a plane, an `if`, or the canvas edge. Use `if` only as an optimisation where the term is provably near zero.
+
+```glsl
+// Wrong: a hard box cut
+if (r > R) discard;
+
+// Right: window to zero inside the bound
+float inside = window(r, 0.0, R, 2.0 * px);
+col *= inside;
+```
+
+The last 10 rows and columns of the canvas must read alpha 0 in every phase. Use `tonemap()`, never `clamp`, so bright cores roll off instead of flattening. Add gated triangular dither after `tonemap` to prevent 8-bit staircases:
+
+```glsl
+col = tonemap(col, 1.15);
+float m = max(col.r, max(col.g, col.b));
+float n = (hash12(gl_FragCoord.xy + fract(uTime * .61) * 91.)
+         + hash12(gl_FragCoord.yx * 1.37 + fract(uTime * .37) * 57.) - 1.) / 255.;
+col = max(col + n * smoothstep(0., 1.5 / 255., m), 0.);
+```
+
+## Light theme shaders: inks on paper
+
+Light is the shipping theme. Shaders on light pages must be designed for paper, not dark-plate glows converted at the end.
+
+Over white, the canvas is normal-blended (never `screen`, because screen over white is white). No pixel can be brighter than the paper, so light reads through **saturation and local contrast**.
+
+<CardGroup cols={2}>
+  <Card title="Glow structure" icon="circle-half-stroke">
+    A saturated body, a pale near-white core, and a coloured rim. The pale core reads as hot only because the saturated body around it is darker.
+  </Card>
+  <Card title="Surfaces under light" icon="sun">
+    What the light falls on takes a tint (multiply-like, with capped alpha). It doesn't get brighter.
+  </Card>
+</CardGroup>
+
+To solve the ink for a desired paper colour:
+
+```glsl
+vec4 inkFor(vec3 seen, float cover) {
+  vec3 absorbed = 1. - seen;
+  float a = max(max(absorbed.r, max(absorbed.g, absorbed.b)), cover);
+  return vec4(vec3(a) - absorbed, a);
+}
+```
+
+Over white this composites to exactly `seen`.
+
+<Accordion title="Light-theme rules for each phenomenon">
+
+**Hot bodies (fire, exhaust):** weighted toward the axis in light — `mix(1., 1.3 - .6 * smoothstep(0., rf, r), uLight)`. Cut the limb mantle (it draws an outline on paper and leaves the flame hollow). Keep raggedness to the outer part and put the pale core at the nozzle.
+
+**Smoke and steam:** light grey, never with dark glow ink. Edge `(.84,.87,.90)`, crown `(.97,.975,.98)`, underside `(.72,.76,.81)`. Near a hot source, warm toward pale amber. No halos in empty air.
+
+**Molten metal / forged steel:** index by brightness temperature so a dim far wall and a bright pour read from the same table. A cream core only in the hottest centre. Stops: 560 °C `(.45,.09,.05)` → 950 °C `(.95,.38,.06)` → 1260 °C `(1,.93,.78)`.
+
+**Fade the finished ink once.** Scaling a premultiplied ink by `u` is an exact linear crossfade from bare paper to the full picture, monotonic in every pixel. Never scale each term before inking it — that causes first light to go pale and then dark.
+
+</Accordion>
+
+## A minimal shader page
+
+The hot-plate example: a glowing plate registering with an SVG ring of radius 40, bounded by the deck's rounded edge.
+
+`build.mjs`:
+
+```js
+const P = k.fitProjection(points, W, H, { pad: 28, azimuth: 40 });
+const DECK = { x: -90, y: -90, w: 180, d: 180, r: 8 };
+const DATA = {
+  W, H,
+  camera: glCamera(P),
+  plateR: 40,
+  deck: [DECK.w / 2, DECK.r],
+};
+const backSvg = k.figureSvg({ width: W, height: H, label: LABEL, body: back });
+const frontSvg = `<svg xmlns="http://www.w3.org/2000/svg"
+  class="iso-svg fx-layer" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+  ${front.join("")}
+</svg>`;
+const stage = `<div class="fx-stage" tabindex="0">
+  ${backSvg}
+  <canvas class="fx-layer fx-gl" aria-hidden="true"></canvas>
+  ${frontSvg}
+</div>`;
+const page = k.pageHtml({
+  title, theme,
+  body: `<style>${CSS}</style>${k.plateHtml({ ...card, body: stage })}`,
+  script: kitScript() + glScript() + LIVE.replace("__DATA__", JSON.stringify(DATA)),
+});
+```
+
+`live.js`:
+
+```js
+const D = __DATA__;
+const stage = document.querySelector(".fx-stage");
+const still = matchMedia("(prefers-reduced-motion: reduce)");
+const LIGHT = document.body.dataset.theme === "light" ? 1 : 0;
+
+const FRAGMENT = `
+uniform float uHeat;
+uniform float uLight;
+const float R = ${D.plateR.toFixed(1)};
+const vec2 DECK = vec2(${D.deck[0].toFixed(1)}, ${D.deck[1].toFixed(1)});
+float deckDist(vec2 p) {
+  vec2 q = abs(p) - DECK.x + DECK.y;
+  return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - DECK.y;
+}
+void main() {
+  vec2 vb = viewOf(gl_FragCoord.xy);
+  float px = pixelOf() / uCam.z;
+  vec3 p = onFloor(vb, 0.);
+  float r = length(p.xy);
+  float disc = 1. - smoothstep(R - .7 * px, R + .7 * px, r);
+  float onDeck = 1. - smoothstep(-.7 * px, .7 * px, deckDist(p.xy));
+  float halo = exp(-pow(r / (R * 1.6), 2.)) * onDeck;
+  vec3 col = tonemap(vec3(1., .42, .12) * (disc * .9 + halo * .35) * uHeat, 1.2);
+  float a = max(col.r, max(col.g, col.b));
+  vec4 dark = vec4(col, a);
+  vec4 light = vec4(vec3(.62, .24, .08) * a * .8, a * .8);
+  gl_FragColor = mix(dark, light, uLight);
+}`;
+
+const layer = glLayer({
+  canvas: stage.querySelector(".fx-gl"),
+  fragment: FRAGMENT,
+  view: [D.W, D.H],
+  camera: D.camera,
+  uniforms: ["uHeat"],
+  fixed: { uLight: LIGHT },
+});
+if (layer) stage.setAttribute("data-gl", "");
+
+const heat = { x: 0, v: 0 };
+let target = 1, clock = 0, last = 0, frame = 0, visible = false;
+
+function tick(now) {
+  const dt = last ? Math.min((now - last) / 1000, 1 / 30) : 1 / 60;
+  last = now;
+  clock += dt;
+  const moving = settle(heat, target, dt, 0.35, still.matches);
+  if (layer) {
+    heat.x > 1e-3
+      ? layer.draw({ uHeat: heat.x }, still.matches ? 0.8 : clock)
+      : layer.clear();
+  }
+  frame = visible && moving ? requestAnimationFrame(tick) : 0;
+}
+
+const run = () => { if (!frame && visible) { last = 0; frame = requestAnimationFrame(tick); } };
+new IntersectionObserver((entries) => {
+  visible = entries[entries.length - 1].isIntersecting;
+  if (visible) run();
+}, { rootMargin: "120px 0px" }).observe(stage);
+```
+
+<Note>
+  Without `uTime` animation, this loop stops once `heat` has settled. With an animated field (flicker, flow), keep running while the effect is above its activity threshold and the figure is visible.
+</Note>
+
+## Restraint and performance
+
+Cap the device pixel ratio at 1.5 (the `maxRatio` default). Draw only while the effect is active: clear both canvases and let the loop stop once every envelope is below 1e-3. Stop offscreen with an `IntersectionObserver`. Gate costly terms on uniforms — `if (uSmoke < .0004 && uVent < .0004) return vec3(0.);` costs nothing per pixel when off.
+
+For reduced motion: jump straight to a representative steady state, freeze `uTime`, zero every event envelope (no flash, shock, or shake), and redraw only when the JSON of the uniforms changes. The figure must still respond to input.
+
+`glLayer` returns `null` when WebGL is unavailable — guard every call. Mark the stage with `data-gl` when WebGL runs so CSS can swap between the SVG fallback and the shader. Test the fallback with `node scripts/drive.mjs page.html --no-webgl`.

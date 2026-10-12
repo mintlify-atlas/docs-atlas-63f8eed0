@@ -1,0 +1,249 @@
+---
+title: "tube.mjs: depth-sorted pipes, cables, and textures"
+sidebarTitle: "tube.mjs"
+description: "Split any 3D pipe route into depth-sortable chunks, add ring textures for braids and corrugation, and find where a route crosses a clamp disc."
+---
+
+`kit/tube.mjs` turns a 3D centreline into a set of screen ribbons — one chunk per sort slot — with a paper body, shine, shade, edge lines, end caps, and optional braid or corrugation texture. Each chunk knows its depth, so you can paint it next to the solids it passes.
+
+```js
+import { tubePieces, tubeSvg, runsOf, crossingsOf } from "../../kit/tube.mjs";
+```
+
+## tubePieces
+
+```js
+const pieces = tubePieces(points3, radius, P, {
+  maxLength: 30,
+  spacing: 2.2,
+  closed: false,
+  breaks: [],
+  gaps: [],
+  caps: true,
+  stripes: "auto",
+});
+```
+
+Splits a 3D route into chunks of at most `maxLength` world units, each drawn as a 2D ribbon.
+
+### Options
+
+<ParamField path="maxLength" type="number" default="30">
+  Maximum chunk length in world units. Use short chunks (6–18) where a pipe weaves between neighbours; long ones (400) for a ring that lies flat on the floor.
+</ParamField>
+
+<ParamField path="spacing" type="number" default="2.2">
+  Point spacing along the route when resampling. Leave at the default unless you need a very smooth small-radius pipe.
+</ParamField>
+
+<ParamField path="closed" type="boolean" default="false">
+  `true` for a closed loop with no gaps — the first and last pieces wrap round each other.
+</ParamField>
+
+<ParamField path="breaks" type="number[]" default="[]">
+  Arc lengths where a chunk must end: at a crossing, or where the pipe turns back past a part.
+</ParamField>
+
+<ParamField path="gaps" type="[number, number][]" default="[]">
+  `[from, to]` arc-length spans not drawn because a collar, clamp, valve or fitting covers them. The pipe ends flat on each side of a gap, with an elliptical cap.
+</ParamField>
+
+<ParamField path="caps" type="boolean | [boolean, boolean]" default="true">
+  `false` disables end caps at the route's own two ends. `[false, true]` caps only the far end — for a branch whose start hides inside a tee collar.
+</ParamField>
+
+<ParamField path="stripes" type='"auto" | boolean' default='"auto"'>
+  Whether to draw shine and shade stripes. `"auto"` decides once from the widest point of the whole route, so a taper never drops its stripes at one chunk joint.
+</ParamField>
+
+### Return value
+
+`tubePieces` returns an array of pieces. Each piece is:
+
+<ResponseField name="mid" type="Point3">
+  The chunk's centre in world space — use `G.dot3(piece.mid, G.viewOf(P))` as the depth sort key.
+</ResponseField>
+
+<ResponseField name="body" type="string">
+  The paper-coloured fill path.
+</ResponseField>
+
+<ResponseField name="shine" type="string">
+  The shine stripe path (only on `wide` pieces).
+</ResponseField>
+
+<ResponseField name="shade" type="string">
+  The shade stripe path (only on `wide` pieces).
+</ResponseField>
+
+<ResponseField name="edges" type="string">
+  The two edge lines.
+</ResponseField>
+
+<ResponseField name="wide" type="boolean">
+  True when the route is wide enough on screen for shine and shade bands — decided once for the whole route from its widest point.
+</ResponseField>
+
+<ResponseField name="points" type="Point3[]">
+  The chunk's 3D centreline — record for the audit.
+</ResponseField>
+
+<ResponseField name="radii" type="number[]">
+  The chunk's radii along the centreline — record for the audit.
+</ResponseField>
+
+<ResponseField name="ends" type="{ from: boolean, to: boolean }">
+  Which ends are real ends rather than joints with a neighbour.
+</ResponseField>
+
+<ResponseField name="from" type="number">
+  Arc-length start of this chunk.
+</ResponseField>
+
+<ResponseField name="to" type="number">
+  Arc-length end of this chunk.
+</ResponseField>
+
+## tubeSvg
+
+```js
+const markup = tubeSvg(piece, { tone: "hi" });
+```
+
+Renders one piece as `<g class="tb">`. Shine and shade appear only on `wide` pieces, then the piece's rings (`.tb-ring`), then the edges. The fills for `.tb-body`, `.tb-shine` and `.tb-shade` come from `ISO_CSS` — no extra CSS needed.
+
+## rings option — braid, corrugation, tape wrap
+
+Pass `rings` inside the `tubePieces` options to add a texture that follows the pipe's cross-section:
+
+```js
+const pieces = tubePieces(points3, radius, P, {
+  rings: {
+    pitch: 3,
+    twist: 0,
+    cross: false,
+    fade: [0.1, 0.55],
+    phase: 0,
+    steps: 16,
+    tone: "lo",
+  },
+});
+```
+
+<ParamField path="rings.pitch" type="number" default="3">
+  Spacing between ring stations in world arc-length units, measured from the route's start.
+</ParamField>
+
+<ParamField path="rings.twist" type="number" default="0">
+  Turns each ring into a helix advancing this many radians from limb to limb — for a braid or a tape wrap.
+</ParamField>
+
+<ParamField path="rings.cross" type="boolean" default="false">
+  Adds the other-hand helix for a true braid pattern.
+</ParamField>
+
+<ParamField path="rings.fade" type="[number, number]" default="[0.1, 0.55]">
+  Smoothstep fade range — each ring segment's opacity is `fadeOf(facing, fade)`, so the texture fades toward both limbs instead of ending on a hard line.
+</ParamField>
+
+<ParamField path="rings.phase" type="number" default="0">
+  Shifts the ring stations along the route, for aligning a pattern to a feature.
+</ParamField>
+
+<ParamField path="rings.steps" type="number" default="16">
+  Arc segments per ring station.
+</ParamField>
+
+<ParamField path="rings.tone" type="string" default='"lo"'>
+  Line tone for the ring markup.
+</ParamField>
+
+Each piece carries `rings: [{ d, alpha }]` when rings are enabled. Draw them with `ringsSvg(rings, tone)`.
+
+<Note>
+  Ring stations sit at fixed arc-length intervals from the route's start, so the pattern is **continuous through every chunk joint**. Rings run over each chunk's stripe overhang and stop on real ends and gap faces, keeping a third of a pitch off an end face. Helices end exactly on the face.
+</Note>
+
+## runsOf
+
+```js
+const runs = runsOf(total, gaps);
+// returns [[from, to], [from, to], …]
+```
+
+The drawn `[from, to]` arc-length spans of a route of length `total` once `gaps` are removed. Record each run as its own tube shape for the audit.
+
+## crossingsOf
+
+```js
+const arcLengths = crossingsOf(points, centre, axis, radius);
+```
+
+Arc lengths where the route crosses the disc of a clamp or collar — the plane through `centre` normal to `axis`, within `radius`. Turn each crossing into a gap of the clamp's thickness:
+
+```js
+const clampAt = pointAlong(route, atLength);
+const crossings = G.crossingsOf(route, clampAt, clampAxis, clampRadius);
+const gaps = crossings.map((at) => [at - clampThick / 2, at + clampThick / 2]);
+const pieces = tubePieces(route, r, P, { gaps });
+```
+
+## Depth-sorting tubes
+
+Draw each piece at its own depth — place it in your item list with the key `G.dot3(piece.mid, G.viewOf(P))`, next to the solids it passes.
+
+```js
+for (const piece of pieces) {
+  const depth = G.dot3(piece.mid, G.viewOf(P));
+  put("pipe.run", piece.mid, tubeSvg(piece, { tone: "hi" }), { key: depth });
+}
+```
+
+Use short pieces (`maxLength` 6–18) where a pipe weaves between neighbours, and long ones (400) for a ring that lies flat on the floor. To split a pipe across SVG layers, test `piece.mid`:
+
+```js
+const frontPieces = pieces.filter((p) => p.mid[2] > Z.rim - 1);
+const backPieces  = pieces.filter((p) => p.mid[2] <= Z.rim - 1);
+```
+
+<Note>
+  In a dense figure, don't tune depth keys by eye. Record the pieces and let `orderKeys` (from `kit/audit.mjs`) settle them.
+</Note>
+
+## Anything that wraps a pipe splits it
+
+A collar, band, bellows disc, clamp or valve body is wider than the pipe it sits on. If the pipe runs through it as one chunk, no key can order them — the collar either hides the near side of the pipe, or the pipe paints over the collar's face. Gap the pipe at the collar:
+
+```js
+// Gap the pipe at [at - t/2, at + t/2] around every collar
+const pieces = tubePieces(route, r, P, {
+  gaps: collars.map(({ at, thick }) => [at - thick / 2, at + thick / 2]),
+});
+```
+
+The far piece ends at the collar's back face, the near piece starts at its front face, and both order cleanly.
+
+## The pipe() helper pattern
+
+The Raptor engine's `pipe()` helper is a reliable pattern for building a production pipe:
+
+<Steps>
+  <Step title="Fillet the control points">
+    ```js
+    const route = G.fillet(controlPoints, 2.6 * r, 7, { P, tube: r });
+    ```
+    Use a bend radius of at least 2.6 × pipe radius. A valve or bellows needs a straight leg at least as long as its body plus both fillet cuts.
+  </Step>
+  <Step title="Work out the collars first">
+    Compute end flanges, bands, bellows discs and valve bodies. Record their spans as `gaps`.
+  </Step>
+  <Step title="Run tubePieces">
+    ```js
+    const pieces = tubePieces(route, r, P, { gaps });
+    ```
+    Record each chunk's `points` and `radii` with the audit recorder, and record each drawn run with `R.route`.
+  </Step>
+  <Step title="Draw the collars">
+    Give each collar `owner` set to the pipe's name so the audit doesn't count a pipe's own flange as a collision.
+  </Step>
+</Steps>

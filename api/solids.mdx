@@ -1,0 +1,330 @@
+---
+title: "Solid builder functions in the Anatomy isometric kit"
+sidebarTitle: "Solids"
+description: "Complete reference for slabOf, cylinder, extrude, ringOf, circleRing, insetPlan, corners, boxCorners, and haloOf in the Anatomy kit."
+---
+
+All Anatomy solids are prisms: a floor outline extruded straight up. Every solid builder returns a `SolidPaths` object containing the SVG `d` strings for each visual layer. Pass the result to `solidSvg` (or the `<Solid>` React component) to render it. The `shades` array is the key to realistic shading — each element holds faces bucketed by how strongly they face the light.
+
+## `SolidPaths` structure
+
+Every builder returns this object. The fields map directly to the CSS classes painted by `solidSvg`:
+
+| Field | Class | What it is |
+|---|---|---|
+| `fill` | `iso-fill` | Paper-coloured hull path that hides everything behind the solid |
+| `shades[0..3]` | `iso-shade` | Visible side faces bucketed by light angle (0 = darkest, 3 = lightest) |
+| `top` | `iso-top` | The top face, lighter than the sides |
+| `crease` | `iso-crease` | Where the top meets the visible sides |
+| `bevel?` | `iso-bevel` | Optional highlight line inset on the top along visible edges |
+| `outline` | `iso-edge` | The silhouette |
+| `seamless?` | `data-seamless` | Set on smooth lathe solids; changes stroke handling in `ISO_CSS` |
+
+`solidSvg` paints them in this exact order: fill → shades → top → crease → bevel → inner → outline. The `inner` option passed to `solidSvg` (not stored in `SolidPaths`) holds extra line markup — seam lines and band lines — placed just before the outline so they sit under the silhouette stroke.
+
+---
+
+## `slabOf`
+
+Builds a rounded rectangular box. This is the most common solid in the kit — use it for bases, housings, panels, blocks, and any rectangular part.
+
+```js
+const paths = K.slabOf(plan, z, h, P, steps, bevel);
+
+// Example from examples/dial-indicator/build.mjs:
+K.slabOf(PLATE, -PLATE_H, PLATE_H, P, 8, 1.6)
+```
+
+<ParamField path="plan" type="Plan" required>
+  Floor footprint `{ x, y, w, d, r }`. The corner radius `r` rounds the rectangle; set it to 0 for a sharp box.
+</ParamField>
+
+<ParamField path="z" type="number" required>
+  Bottom of the solid in world units. Negative values place the base below the floor.
+</ParamField>
+
+<ParamField path="h" type="number" required>
+  Height in world units.
+</ParamField>
+
+<ParamField path="P" type="Projection" required>
+  Camera projection.
+</ParamField>
+
+<ParamField path="steps" type="number" default="8">
+  Points per corner arc. Controls how smooth the rounded corners appear:
+  - 2–4 for small parts where rounding is barely visible
+  - 8–10 for large rounded parts where the curve matters
+  Higher values cost more SVG path data but produce smoother silhouettes.
+</ParamField>
+
+<ParamField path="bevel" type="number" default="0">
+  Width in world units of the highlight line inset on the top face along the visible edges. A value of 0.3–1.6 adds a chamfer-like highlight that reads as a machined edge. The bevel runs into the silhouette corners and is stored in `paths.bevel`.
+</ParamField>
+
+**Returns** `SolidPaths`.
+
+---
+
+## `cylinder`
+
+Builds a round post, puck, foot, knob, or pad. Internally calls `extrude` with a `circleRing` outline.
+
+```js
+const paths = K.cylinder(cx, cy, r, z, h, P, steps, bevel);
+
+// Example: a rubber foot
+K.cylinder(x, y, 7, -PLATE_H - FOOT_H, 1.6, P, 28)
+```
+
+<ParamField path="cx" type="number" required>
+  Centre x in world units.
+</ParamField>
+
+<ParamField path="cy" type="number" required>
+  Centre y in world units.
+</ParamField>
+
+<ParamField path="r" type="number" required>
+  Radius in world units.
+</ParamField>
+
+<ParamField path="z" type="number" required>
+  Bottom of the cylinder in world units.
+</ParamField>
+
+<ParamField path="h" type="number" required>
+  Height in world units.
+</ParamField>
+
+<ParamField path="P" type="Projection" required>
+  Camera projection.
+</ParamField>
+
+<ParamField path="steps" type="number" default="32">
+  Facet count — controls smoothness of the round silhouette:
+  - 16–20 for small cylinders (knobs, screws, pins)
+  - 28–32 for medium cylinders (posts, feet, bosses)
+  - 56–72 for large discs (dials, flanges, big pucks)
+  More steps only affect the tone fill facets; the outline and rims are sampled from the true circle.
+</ParamField>
+
+<ParamField path="bevel" type="number" default="0">
+  Top-edge highlight width, same as `slabOf`.
+</ParamField>
+
+**Returns** `SolidPaths`.
+
+---
+
+## `extrude`
+
+Extrudes any floor outline upward. The foundation for `slabOf` and `cylinder`. Use it directly when the floor shape is not a rectangle or circle — an L-bracket, a custom panel cutout, or any polygon.
+
+```js
+const paths = K.extrude(ring, z, h, P, { convex, bevel });
+```
+
+<ParamField path="ring" type="Plane[]" required>
+  The floor outline as a list of `[x, y]` points. The winding direction (clockwise or counter-clockwise) is detected automatically. For convex outlines the default hull fill works; for concave outlines you must pass `convex: false`.
+</ParamField>
+
+<ParamField path="z" type="number" required>
+  Bottom height in world units.
+</ParamField>
+
+<ParamField path="h" type="number" required>
+  Extrusion height in world units.
+</ParamField>
+
+<ParamField path="P" type="Projection" required>
+  Camera projection.
+</ParamField>
+
+<ParamField path="options.convex" type="boolean" default="true">
+  When `true`, `fill` is the convex hull of all projected points — fast and correct for convex shapes. Set to `false` for concave outlines: fill becomes a union of the top face, bottom face, and all visible side faces, which is correct but costs more SVG path data.
+</ParamField>
+
+<ParamField path="options.bevel" type="number" default="0">
+  Top-edge highlight width in world units.
+</ParamField>
+
+**Returns** `SolidPaths`.
+
+---
+
+## `ringOf` and `roundedPlan`
+
+Returns the floor outline of a `Plan` as an array of `[x, y]` points. These are the same function — use whichever name reads more clearly in context. The points trace the rounded rectangle corners at `steps` points per arc.
+
+```js
+const ring: Plane[] = K.ringOf(plan, steps);
+const ring: Plane[] = K.roundedPlan(plan, steps);
+```
+
+<ParamField path="plan" type="Plan" required>
+  Floor plan `{ x, y, w, d, r }`.
+</ParamField>
+
+<ParamField path="steps" type="number" default="8">
+  Points per corner arc. Match the `steps` value you will pass to `slabOf` or `extrude` for the same plan.
+</ParamField>
+
+**Returns** `Plane[]` — the outline points in order.
+
+---
+
+## `circleRing`
+
+Returns a circle as an array of `[x, y]` floor points. Use it with `extrude` to build custom cylinders, or with `onTop` to project a circle onto a face.
+
+```js
+const ring: Plane[] = K.circleRing(cx, cy, r, steps);
+```
+
+<ParamField path="cx" type="number" required>
+  Centre x.
+</ParamField>
+
+<ParamField path="cy" type="number" required>
+  Centre y.
+</ParamField>
+
+<ParamField path="r" type="number" required>
+  Radius.
+</ParamField>
+
+<ParamField path="steps" type="number" default="40">
+  Number of points. Match the facet count you would pass to `cylinder`.
+</ParamField>
+
+**Returns** `Plane[]`.
+
+---
+
+## `insetPlan`
+
+Shrinks or grows a `Plan` by a uniform amount. Use it to draw grooves, inlays, panel lines, or a lid seam inset from the body.
+
+```js
+const inner = K.insetPlan(plan, 5);   // shrinks by 5 on all sides
+const outer = K.insetPlan(plan, -3);  // grows by 3 on all sides
+
+// Example: groove on the plate top face
+K.planOutline(K.insetPlan(PLATE, 5), 0, P)
+```
+
+<ParamField path="plan" type="Plan" required>
+  The source plan to shrink or grow.
+</ParamField>
+
+<ParamField path="by" type="number" required>
+  Amount to inset. Positive shrinks the plan; negative grows it. The corner radius is reduced by the same amount (clamped to 0).
+</ParamField>
+
+**Returns** a new `Plan` with `x += by`, `y += by`, `w -= by * 2`, `d -= by * 2`, and `r = max(0, r - by)`.
+
+---
+
+## `corners`
+
+Returns the four floor points inset from the corners of a `Plan`. Use them to place feet, screws, rivets, and bolts at the corners of a plate.
+
+```js
+const pts: Plane[] = K.corners(plan, inset);
+
+// Example: placing feet on a plate
+for (const [x, y] of K.corners(PLATE, 22)) {
+  out.push(K.cylinder(x, y, 7, -PLATE_H - FOOT_H, 1.6, P, 28));
+}
+```
+
+<ParamField path="plan" type="Plan" required>
+  The floor plan whose corners to find.
+</ParamField>
+
+<ParamField path="inset" type="number" default="0">
+  Distance from each corner edge. An inset of 10 places the point 10 units from both walls.
+</ParamField>
+
+**Returns** `Plane[]` — four points: top-left, top-right, bottom-left, bottom-right of the plan.
+
+---
+
+## `boxCorners`
+
+Returns the eight 3D corners of a plan's bounding box at two heights. Pass them to `fitProjection` to ensure the scene fits in the viewBox.
+
+```js
+const pts: Point3[] = K.boxCorners(plan, z0, z1);
+
+// Common pattern
+const P = K.fitProjection(
+  [...K.boxCorners(OUTER_PLAN, BOTTOM_Z, TOP_Z), [tipX, tipY, tipZ]],
+  WIDTH,
+  HEIGHT,
+);
+```
+
+<ParamField path="plan" type="Plan" required>
+  Floor plan. Only `x`, `y`, `w`, `d` are used; corner radius is ignored.
+</ParamField>
+
+<ParamField path="z0" type="number" required>
+  Bottom height.
+</ParamField>
+
+<ParamField path="z1" type="number" required>
+  Top height.
+</ParamField>
+
+**Returns** `Point3[]` — eight corners, all combinations of `{ x, x+w } × { y, y+d } × { z0, z1 }`.
+
+---
+
+## `haloOf`
+
+Returns the SVG `d` string for a soft shadow path under a solid. Render it as `<path class="iso-halo" d={...}/>` before the solid. `ISO_CSS` styles it with a blur and opacity.
+
+```js
+const d = K.haloOf(plan, z, h, P);
+
+// Example from dial-indicator:
+out.push(`<path class="iso-halo" d="${K.haloOf(PLATE, -PLATE_H - FOOT_H, PLATE_H, P)}"/>`);
+```
+
+<ParamField path="plan" type="Plan" required>
+  Floor footprint of the solid that casts the shadow.
+</ParamField>
+
+<ParamField path="z" type="number" required>
+  Bottom of the solid.
+</ParamField>
+
+<ParamField path="h" type="number" required>
+  Height of the solid.
+</ParamField>
+
+<ParamField path="P" type="Projection" required>
+  Camera projection.
+</ParamField>
+
+**Returns** `string` — an SVG path `d` attribute value. The path is the `fill` of an equivalent `slabOf`.
+
+---
+
+## Steps guidance
+
+The `steps` parameter controls how many points per corner arc are generated. More steps = smoother silhouette but larger SVG output. Choose by the rendered size and the visual importance of the curve:
+
+| Use case | Steps |
+|---|---|
+| Small parts (feet, screws, tiny knobs) | 2–4 |
+| Medium rounded boxes, standard slabs | 8–10 |
+| Small cylinders (posts, pins, studs) | 16–20 |
+| Medium cylinders (posts, dial bodies) | 28–32 |
+| Large discs (big flanges, dials, pucks) | 56–72 |
+
+<Tip>
+The steps parameter only affects the tone fill facets. Outlines, rims, and creases are always sampled from the true circle at approximately 1.5 px. A `cylinder` with 16 steps still has a smooth silhouette — it just has wider tone bands.
+</Tip>

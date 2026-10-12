@@ -1,0 +1,483 @@
+---
+title: "SVG renderers, card, and page builder API reference"
+sidebarTitle: "SVG Strings"
+description: "Complete reference for solidSvg, lineSvg, dotsSvg, wireSvg, figureSvg, fadedSvg, fadeLineSvg, plateHtml, and pageHtml in the Anatomy kit."
+---
+
+The SVG string functions are framework-free: they take numbers and strings in, return strings out, and work identically in a Node build script and a browser. Every renderer maps to a corresponding React component in `kit/react/draw.tsx`. The card and page builders wrap rendered SVG in HTML with the full `ISO_CSS` stylesheet.
+
+## SVG renderers
+
+### `solidSvg`
+
+Paints a `SolidPaths` object as a `<g class="iso-solid">` group. Call this after every solid builder — it layers the fill, shade faces, top, crease, bevel, inner markup, and outline in the correct paint order.
+
+```js
+const svg = K.solidSvg(paths, options?);
+
+// Example from dial-indicator
+K.solidSvg(K.slabOf(PLATE, -PLATE_H, PLATE_H, P, 8, 1.6), { tone: 'mid' })
+
+// With a seam line drawn under the outline
+K.solidSvg(paths, {
+  tone: 'mid',
+  inner: K.lineSvg(K.sideSeam(plan, lidZ, P, 8), { tone: 'faint' }),
+})
+```
+
+<ParamField path="paths" type="SolidPaths" required>
+  The paths object from `slabOf`, `cylinder`, `extrude`, or any lathe builder.
+</ParamField>
+
+<ParamField path="options.tone" type="Tone" default='"hi"'>
+  Silhouette outline tone: `"hi"`, `"mid"`, `"lo"`, or `"faint"`. Use `"hi"` for the nearest prominent parts and `"lo"` for recessed or background parts.
+</ParamField>
+
+<ParamField path="options.crease" type='Tone | "none"' default='"faint"'>
+  Tone for the crease line where the top meets the sides, and for the bevel. Pass `"none"` to suppress creases entirely.
+</ParamField>
+
+<ParamField path="options.halo" type="boolean" default="false">
+  If `true`, prepends a `<path class="iso-halo">` shadow beneath the fill. Only needed on the lowest solid in a stack — usually simpler to call `haloOf` separately and insert it before the group.
+</ParamField>
+
+<ParamField path="options.lit" type="boolean" default="false">
+  Sets `data-lit` on the group. `ISO_CSS` then uses `--anatomy-lit-top` and `--anatomy-lit-shade` for the top and shade faces, making the solid appear lit from above. Use it for active or highlighted parts.
+</ParamField>
+
+<ParamField path="options.flat" type="boolean" default="false">
+  If `true`, skips all shade and top faces. The solid renders as a flat silhouette with only fill and outline. Use it for flat panels and backgrounds.
+</ParamField>
+
+<ParamField path="options.className" type="string">
+  Extra CSS class added alongside `iso-solid`.
+</ParamField>
+
+<ParamField path="options.inner" type="string">
+  Extra SVG markup inserted just before the outline stroke. This is where seam lines, weld lines, and band lines go — they must sit under the silhouette stroke. The `sideSeam`, `ringSeam`, and `arcOf` (from `lathe.mjs`) functions produce paths intended for `inner`.
+</ParamField>
+
+**Returns** `string` — a `<g class="iso-solid">` element.
+
+<Note>
+When `paths.seamless` is set (on smooth lathe solids from `sphereOf`), the group gets `data-seamless` and `ISO_CSS` strokes each tone region in its own colour at 0.4 wide, so abutting tone sheets show no hairline seams.
+</Note>
+
+---
+
+### `lineSvg`
+
+Renders a single SVG path as a styled line. Every texture line, seam, groove, indicator, and wire in Anatomy uses this function.
+
+```js
+const svg = K.lineSvg(d, options?);
+
+// Examples
+K.lineSvg(K.knurl(cx, cy, r, z0, z1, 36, P), { tone: 'lo' })
+K.lineSvg(K.ring(cx, cy, 2.2, 0, P, 16), { tone: 'lo' })
+K.lineSvg(route, { tone: 'mid', flow: true })   // animated dashes
+K.lineSvg(groove, { tone: 'faint', dashed: true })
+```
+
+<ParamField path="d" type="string" required>
+  SVG path data. An empty string produces no output.
+</ParamField>
+
+<ParamField path="options.tone" type="LineTone" default='"lo"'>
+  Line colour: `"hi"`, `"mid"`, `"lo"`, `"faint"`, `"lit"`, `"red"`, `"green"`, or `"blue"`.
+</ParamField>
+
+<ParamField path="options.dotted" type="boolean" default="false">
+  Renders as round dots (`stroke-dasharray: 0.01 3.5`). Use for centre lines, hidden outlines.
+</ParamField>
+
+<ParamField path="options.dashed" type="boolean" default="false">
+  Renders as dashes (`stroke-dasharray: 3 3`).
+</ParamField>
+
+<ParamField path="options.flow" type="boolean" default="false">
+  Animates the dash pattern with `iso-flow` keyframes (1600 ms, linear, infinite). Use it for conveyor belts, fluid paths, data flows, and anything moving along a route.
+</ParamField>
+
+<ParamField path="options.className" type="string">
+  Extra CSS class added alongside `iso-line`.
+</ParamField>
+
+<ParamField path="options.free" type='boolean | "start" | "end"'>
+  Writes `data-free` on the path, telling `scripts/lines.mjs` that this end is intentionally on a bare face (a needle's tail, a pointer's tip, a rule line standing for text). Every other line end must land on a stroke, dot, or fill. Use `true` for both ends, `"start"` or `"end"` for one.
+</ParamField>
+
+**Returns** `string` — a `<path class="iso-line">` element, or `""` if `d` is empty.
+
+---
+
+### `dotsSvg`
+
+Renders a set of dots as `<circle>` elements. Use it for screw heads, rivets, bolt circles, and any point detail.
+
+```js
+const svg = K.dotsSvg(points, options?);
+
+// Example: screw dots
+K.dotsSvg(K.pointsAt(K.corners(PLATE, 10).map(([x, y]) => [x, y, 0]), P))
+
+// With per-dot opacity (from dotsOf with fade)
+K.dotsSvg(dotsWithAlpha, { tone: 'mid' })
+```
+
+<ParamField path="points" type="Array<Flat | [number, number, number]>" required>
+  Screen points. A point may carry a third value as opacity: `[sx, sy, alpha]`. This is how `dotsOf` (from `lathe.mjs`) fades a bolt circle toward the limb instead of stopping it.
+</ParamField>
+
+<ParamField path="options.size" type="number" default="0.5">
+  Circle radius in SVG units.
+</ParamField>
+
+<ParamField path="options.tone" type="Tone" default='"mid"'>
+  Fill tone. `ISO_CSS` maps each tone to a fixed opacity: `"hi"` → 0.85, `"mid"` → 0.45, `"lo"` → 0.22, `"faint"` → 0.12.
+</ParamField>
+
+<ParamField path="options.pulse" type="boolean" default="false">
+  Animates each dot with a staggered `iso-pulse` opacity keyframe — a single flash on a 1600 ms loop. Use it for status indicators and active channels.
+</ParamField>
+
+**Returns** `string` — `<g class="iso-dots">` containing one `<circle>` per point.
+
+---
+
+### `wireSvg`
+
+A connector with terminal dots at both ends (or one). Use it for data connections, signal wires, and any link that should read clearly as a connection rather than a texture line.
+
+```js
+const svg = K.wireSvg(from, to, options?);
+// from, to: Flat screen points
+```
+
+<ParamField path="from" type="Flat" required>Start screen point.</ParamField>
+<ParamField path="to" type="Flat" required>End screen point.</ParamField>
+
+<ParamField path="options.via" type="Flat[]" default="[]">
+  Intermediate screen waypoints.
+</ParamField>
+
+<ParamField path="options.tone" type="LineTone" default='"lo"'>
+  Line and terminal dot colour.
+</ParamField>
+
+<ParamField path="options.dotted" type="boolean" default="false">Dotted line.</ParamField>
+<ParamField path="options.dashed" type="boolean" default="false">Dashed line.</ParamField>
+<ParamField path="options.flow" type="boolean" default="false">Animated flow.</ParamField>
+
+<ParamField path="options.ends" type='"both" | "from" | "to" | "none"' default='"both"'>
+  Which ends get terminal dots.
+</ParamField>
+
+<ParamField path="options.size" type="number" default="1.2">
+  Radius of the terminal dots.
+</ParamField>
+
+**Returns** `string` — `<g class="iso-wire">` with a line and terminal dot circles.
+
+---
+
+### `fadedSvg`
+
+Draws a set of lines where each carries an individual opacity, as returned by `ribsOf` from `lathe.mjs` with `{ fade }`. Groups lines by opacity level for efficient rendering.
+
+```js
+const svg = K.fadedSvg(list, style?);
+// list: [{ d, alpha }] or [[d, alpha]]
+```
+
+<ParamField path="list" type="Faded[]" required>
+  An array of `{ d: string, alpha: number }` or `[string, number]` pairs. Lines with `alpha < 0.02` are dropped. Opacities are rounded to steps of 0.05 and grouped into shared `<g opacity>` elements — typically 8–12 groups for a full knurl or rib set.
+</ParamField>
+
+<ParamField path="style" type="LineStyle">
+  Same options as `lineSvg` (`tone`, `dotted`, `dashed`, etc.), applied to all lines.
+</ParamField>
+
+**Returns** `string` — grouped `<g opacity>` elements, one per opacity level.
+
+<Tip>
+Use `fadedSvg` for any texture whose members fade one by one toward a limb: ribs, fins, knurls, rule lines. The per-group opacity approach avoids setting `fill-opacity` on every path element individually.
+</Tip>
+
+---
+
+### `fadeLineSvg`
+
+A single line that fades out over a ramp at its start, end, or both. Each ramp uses a `linearGradient` along its own chord. The middle section is a plain `lineSvg` with no overlap or seam.
+
+```js
+const svg = K.fadeLineSvg(points, options?);
+// points: Flat[] screen points
+```
+
+<ParamField path="points" type="Flat[]" required>
+  Screen points of the full line path.
+</ParamField>
+
+<ParamField path="options.fade" type="number | [number, number]" default="[0, 0]">
+  Ramp length in screen pixels. A single number fades both ends equally; `[start, end]` controls them independently. If `start + end > total`, both ramps are scaled proportionally so they share the line.
+</ParamField>
+
+<ParamField path="options.tone" type="LineTone" default='"lo"'>
+  Line colour. Gradients use `var(--anatomy-{tone})` so both dark and light themes work.
+</ParamField>
+
+<ParamField path="options.className" type="string">Extra class on each path segment.</ParamField>
+
+<ParamField path="options.stops" type="number" default="6">
+  Number of gradient stops per ramp. 6 gives a smooth smoothstep curve; reduce to 3–4 for short ramps.
+</ParamField>
+
+**Returns** `string` — `<g class="iso-fade">` with up to three path elements (start ramp, middle, end ramp).
+
+<Note>
+Gradient IDs are computed as a hash of the path data, tone, and direction — so the same line drawn twice shares one gradient definition and the SVG stays compact.
+</Note>
+
+---
+
+### `faceTextSvg`
+
+Places text on an isometric face using a `matrix()` transform from `topMatrix` or `sideMatrix`.
+
+```js
+const svg = K.faceTextSvg(transform, text, options?);
+
+const svg = K.faceTextSvg(K.topMatrix([x, y], z, P), 'RESET', { size: 3, tone: 'mid' });
+```
+
+<ParamField path="transform" type="string" required>
+  SVG `matrix(…)` string from `topMatrix` or `sideMatrix`.
+</ParamField>
+
+<ParamField path="text" type="string" required>
+  The label text. Special characters are escaped.
+</ParamField>
+
+<ParamField path="options.size" type="number" default="3">
+  Font size in SVG units (world units on the face).
+</ParamField>
+
+<ParamField path="options.tone" type="Tone" default='"mid"'>
+  Text colour.
+</ParamField>
+
+<ParamField path="options.anchor" type='"start" | "middle" | "end"' default='"start"'>
+  SVG `text-anchor`.
+</ParamField>
+
+**Returns** `string` — `<text class="iso-face-text">`.
+
+---
+
+### `groupSvg`
+
+Wraps children in a `<g>` element with arbitrary attributes. Use it to attach `transform`, `clip-path`, `data-part`, or any other SVG attribute to a group.
+
+```js
+const svg = K.groupSvg(children, extra?);
+// children: string or string[]
+// extra: Record<string, string | number | undefined | false>
+```
+
+---
+
+### `figureSvg`
+
+The root `<svg>` element. Wrap all rendered content in this before inserting it into a card or page.
+
+```js
+const svg = K.figureSvg({ width, height, label, body, standalone?, className? });
+```
+
+<ParamField path="width" type="number" required>ViewBox width.</ParamField>
+<ParamField path="height" type="number" required>ViewBox height.</ParamField>
+
+<ParamField path="label" type="string" required>
+  Accessible description via `aria-label`. Say what the object is and what it shows: `"An isometric drawing of a dial indicator measuring a stepped block"`. This is the only accessibility hook — make it specific.
+</ParamField>
+
+<ParamField path="body" type="string | string[]" required>
+  SVG content as a string or array of strings.
+</ParamField>
+
+<ParamField path="standalone" type='false | "dark" | "light"' default="false">
+  If `"dark"` or `"light"`, inlines `ISO_CSS` inside a `<style>` tag and sets `data-theme` on the `<svg>`. Use it for SVGs embedded directly in HTML without a parent page that already loads `ISO_CSS`.
+</ParamField>
+
+<ParamField path="className" type="string">
+  Extra class on the `<svg>` element. Use `"rt-back"` or `"rp-back"` when stacking the SVG under a WebGL canvas.
+</ParamField>
+
+**Returns** `string` — the complete `<svg>` element.
+
+---
+
+## Card and page
+
+### `plateHtml`
+
+Builds the interactive card that frames a figure. The card has four corner labels, an optional legend, and a `data-readout` span that live code writes to.
+
+```js
+const html = K.plateHtml({ fig, title, hint, readout, keys, caption, body });
+```
+
+<ParamField path="fig" type="string" required>
+  The figure identifier shown in the top-left corner, e.g. `"Fig 1"` or `"A·1"`.
+</ParamField>
+
+<ParamField path="body" type="string" required>
+  The rendered SVG or canvas+SVG HTML to display inside the card.
+</ParamField>
+
+<ParamField path="title" type="string">
+  Short title shown in the top-right corner, rendered in uppercase with wide letter-spacing.
+</ParamField>
+
+<ParamField path="hint" type="string">
+  Interactive hint shown in the bottom-left corner, rendered in uppercase: `"drag to slide"`, `"press space"`.
+</ParamField>
+
+<ParamField path="readout" type="string">
+  Initial text of the live readout in the bottom-right corner. Live code writes to it via `element.querySelector('[data-readout]')` or the `useReadout()` React hook.
+</ParamField>
+
+<ParamField path="keys" type="LegendKey[]">
+  Legend key entries: `[{ mark, label }]`. Each `mark` is one of `"raised"`, `"flat"`, `"lit"`, `"edge"`, `"dim"`, `"dotted"`, `"dashed"`, `"red"`, `"green"`, `"blue"`. The swatch SVG is generated automatically.
+</ParamField>
+
+<ParamField path="caption" type="string">
+  Longer caption text below the keys.
+</ParamField>
+
+**Returns** `string` — a `<figure class="iso-figure">` with `<div class="iso-plate">` and optional `<figcaption class="iso-legend">`.
+
+---
+
+### `pageHtml`
+
+Builds a complete standalone HTML document with `ISO_CSS` inlined. Use it for the `.html` output files that Claude Code produces.
+
+```js
+const html = K.pageHtml({ title, theme, body, script, width });
+```
+
+<ParamField path="title" type="string" required>
+  Document `<title>` text.
+</ParamField>
+
+<ParamField path="body" type="string" required>
+  The page's HTML body content — typically one or more `plateHtml` cards.
+</ParamField>
+
+<ParamField path="theme" type='"dark" | "light"' default='"dark"'>
+  Sets `data-theme` on the `<body>`. Both themes are fully supported by `ISO_CSS`.
+</ParamField>
+
+<ParamField path="script" type="string">
+  JavaScript module source to inline in a `<script type="module">` tag. For interactive pages, prepend the kit, WebGL layer, and 3D runtime using the script helpers below.
+</ParamField>
+
+<ParamField path="width" type="number" default="650">
+  Maximum page width in pixels. The page is centred with `width: min(650px, 100% - 32px)`.
+</ParamField>
+
+**Returns** `string` — a complete `<!doctype html>` document.
+
+---
+
+### Script helpers
+
+Three functions from `scripts/inline-kit.mjs` return the kit and runtime as strings, ready to prepend to a live page's script.
+
+```js
+import { kitScript, glScript, turnScript } from '../../scripts/inline-kit.mjs';
+```
+
+<Accordion title="kitScript()">
+  Returns the full source of `kit/iso-kit.mjs` as a plain script string. Prepend it to `script` so the page's live code can call `lineOnTop`, `translateAlong`, `iso`, and other kit functions while animating.
+
+  ```js
+  script: kitScript() + LIVE
+  ```
+</Accordion>
+
+<Accordion title="glScript()">
+  Returns the source of `kit/gl.mjs` — `GLSL_ISO`, `glCamera`, `glLayer`, `smooth`, `burst`, and `settle` — as a plain script string.
+
+  ```js
+  // SVG figure with a WebGL shader
+  script: kitScript() + glScript() + LIVE
+
+  // Shader-only page (Raptor plume)
+  script: glScript() + LIVE
+  ```
+
+  <Warning>
+  `glScript()` inlines `smooth`, `burst`, and `settle` as module-level constants. Never redeclare them in your live code — a second `const smooth` is a `SyntaxError` that kills the whole page.
+  </Warning>
+</Accordion>
+
+<Accordion title="turnScript()">
+  Returns the 3D runtime (`TURN`, `TURN_CSS`) with `export` stripped, for pages with live 3D turning groups.
+
+  ```js
+  script: turnScript() + glScript() + LIVE
+  ```
+
+  Its internals are prefixed `t3`/`T3_` to avoid collisions with the kit and WebGL layer.
+</Accordion>
+
+---
+
+### `ISO_CSS`
+
+The complete stylesheet as a string. Included in every page via `pageHtml`. Also available as `kit/iso.css` for projects that load stylesheets separately.
+
+```js
+import { ISO_CSS } from '../../kit/iso-kit.mjs';
+// or
+import css from '../../kit/iso.css' assert { type: 'css' };
+```
+
+`ISO_CSS` defines all `--anatomy-*` custom properties, all `.iso-*` classes, the dark and light themes, and the `iso-flow` and `iso-pulse` keyframe animations. It is self-contained — no other stylesheet is needed to render an Anatomy figure.
+
+### Complete build script example
+
+This is the full structure of a minimal build script, from `examples/dial-indicator/build.mjs`:
+
+```js
+import { writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as K from '../../kit/iso-kit.mjs';
+import { kitScript } from '../../scripts/inline-kit.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+const WIDTH = 600;
+const HEIGHT = 380;
+
+// ... define constants, compute P ...
+
+const body = K.plateHtml({
+  fig: 'Fig 1',
+  title: 'Dial Indicator',
+  hint: 'drag to measure',
+  readout: '0.000 mm',
+  body: K.figureSvg({ width: WIDTH, height: HEIGHT, label: 'Dial indicator on a test plate', body: svgContent }),
+});
+
+const LIVE = `/* interactive script */`;
+
+writeFileSync(
+  join(HERE, 'dial-indicator.html'),
+  K.pageHtml({ title: 'Dial Indicator', body, script: kitScript() + LIVE }),
+);
+```

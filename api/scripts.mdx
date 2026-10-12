@@ -1,0 +1,599 @@
+---
+title: "Anatomy scripts: capture, drive, lines, and publish"
+sidebarTitle: "Scripts"
+description: "Reference for every Anatomy script: headless screenshots, scripted Chrome sessions, line-end verification, kit inlining, gallery publishing, and 3D audits."
+---
+
+Anatomy ships a set of Node.js scripts in `scripts/` that cover every part of the verification and publishing workflow — from a single screenshot to a full orbit audit of a 3D figure. None of them require npm; they run directly with `node scripts/<name>.mjs`. Both `capture.mjs` and `drive.mjs` start Chrome with WebGL on (`--enable-unsafe-swiftshader --ignore-gpu-blocklist`), so shader effects appear in every capture by default.
+
+<Note>
+  All scripts locate Chrome automatically from common install paths and the `CHROME_PATH` environment variable. If no binary is found they print an error and exit 1. Set `CHROME_PATH` to a Chrome or Chromium executable when running in CI or a non-standard location.
+</Note>
+
+---
+
+## `scripts/capture.mjs` — headless screenshots
+
+`capture.mjs` loads a file or URL in headless Chrome, waits for the page to settle, then clips to `.iso-plate` and saves a PNG. It also prints the readout text, any console errors or uncaught exceptions, and whether the page scrolls horizontally.
+
+```sh
+# Desktop screenshot at 1440 px, 2× DPR
+node scripts/capture.mjs page.html --out shots/desk.png
+
+# Phone width
+node scripts/capture.mjs page.html --out shots/phone.png --width 390
+
+# Pointer at 70 % across the card
+node scripts/capture.mjs page.html --out shots/hover.png --hover 0.7,0.5
+
+# Three extra shots at 1.2 s, 2.4 s, 3.6 s after the first
+node scripts/capture.mjs page.html --out shots/tour.png --times 1200,2400,3600
+
+# Press ArrowRight twice before shooting
+node scripts/capture.mjs page.html --out shots/keys.png --key ArrowRight,ArrowRight
+
+# 4× close-up of a region (x, y, width, height in card CSS px)
+node scripts/capture.mjs page.html --out shots/joint.png --zoom 200,80,220,170
+
+# Reduced motion
+node scripts/capture.mjs page.html --out shots/still.png --reduced
+
+# One figure on a dev-server page
+node scripts/capture.mjs http://localhost:3000/docs --select "figure:nth-of-type(3) .iso-plate"
+```
+
+### Chrome location
+
+The script tries each of the following paths in order, then looks for Playwright-cached builds under `~/Library/Caches/ms-playwright` (macOS) and `~/.cache/ms-playwright` (Linux):
+
+- `CHROME_PATH` environment variable
+- `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
+- `/Applications/Chromium.app/Contents/MacOS/Chromium`
+- `/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary`
+- `/usr/bin/google-chrome`, `/usr/bin/google-chrome-stable`, `/usr/bin/chromium`, `/usr/bin/chromium-browser`
+- `C:\Program Files\Google\Chrome\Application\chrome.exe`
+
+### Options
+
+<ParamField path="--out <png>" type="string" default="capture.png">
+  Output path. The directory is created if it does not exist.
+</ParamField>
+
+<ParamField path="--width <px>" type="number" default="1440">
+  Viewport width. Use `390` for a phone-width check.
+</ParamField>
+
+<ParamField path="--height <px>" type="number" default="1000">
+  Viewport height.
+</ParamField>
+
+<ParamField path="--scale <n>" type="number" default="2">
+  Device pixel ratio.
+</ParamField>
+
+<ParamField path="--wait <ms>" type="number" default="2500">
+  Time to let the page settle before the first shot.
+</ParamField>
+
+<ParamField path="--select <css>" type="string" default=".iso-plate">
+  CSS selector for the element to clip to.
+</ParamField>
+
+<ParamField path="--zoom <x,y,w,h>" type="string">
+  Clips to a sub-region of the selected element in card CSS px, then scales by `--zoom-scale`. Use it for 4× close-up audits of junctions and texture ends.
+</ParamField>
+
+<ParamField path="--zoom-scale <n>" type="number" default="4">
+  Device pixel ratio for `--zoom` shots.
+</ParamField>
+
+<ParamField path="--hover <fx,fy>" type="string">
+  Moves the pointer to a fraction of the element (0–1) before shooting. For example `0.7,0.5` is 70 % across and centred vertically.
+</ParamField>
+
+<ParamField path="--key <keys>" type="string">
+  Comma-separated key codes to press on the focused figure before shooting. Use `Comma` for a literal comma, `Digit7` or just `7` for the digit, `ArrowRight`, `Escape`, `Space`, etc. — the same codes as `drive.mjs`.
+</ParamField>
+
+<ParamField path="--times <ms,...>" type="string">
+  Extra shots at these delays measured from the first shot, saved as `name-<ms>.png`. Delays closer than 60–200 ms apart may run late because each capture takes that long.
+</ParamField>
+
+<ParamField path="--reduced" type="boolean">
+  Emulates `prefers-reduced-motion: reduce`.
+</ParamField>
+
+<ParamField path="--theme dark|light" type="string">
+  Emulates `prefers-color-scheme`. Note that kit pages set `data-theme` at build time and ignore this media query; build with `--light` and drive the `-light.html` file to check the light theme.
+</ParamField>
+
+---
+
+## `scripts/drive.mjs` — scripted headless Chrome
+
+`drive.mjs` runs a full scripted session with actions defined as a JSON array. Use it for anything that needs a sequence — hover then click, key then wait, phase transitions, shader contact sheets, and the no-WebGL fallback check. It prints the readout after each shot, then any console errors and exceptions.
+
+```sh
+# Inline JSON action list
+node scripts/drive.mjs page.html '[[\"wait\",1500],[\"move\",\".rt-stage\",0.7,0.4],[\"wait\",600],[\"shot\",\"shots/hover.png\"]]'
+
+# Action list from a file
+node scripts/drive.mjs page.html --actions steps.json --height 1300
+
+# Phone width
+node scripts/drive.mjs page.html --actions steps.json --width 390
+
+# Reduced motion
+node scripts/drive.mjs page-light.html --actions steps.json --reduced
+
+# SVG fallback — every getContext("webgl") returns null
+node scripts/drive.mjs page.html --actions steps.json --no-webgl
+
+# Preload a script before the page's own
+node scripts/drive.mjs page-light.html --actions steps.json --preload slow.js
+```
+
+### Driver options
+
+<ParamField path="--width <px>" type="number" default="1440">
+  Viewport width.
+</ParamField>
+
+<ParamField path="--height <px>" type="number" default="1100">
+  Viewport height. Use `1300` to fit a tall card without scrolling.
+</ParamField>
+
+<ParamField path="--scale <n>" type="number" default="1">
+  Device pixel ratio for screenshots.
+</ParamField>
+
+<ParamField path="--reduced" type="boolean">
+  Emulates `prefers-reduced-motion: reduce`.
+</ParamField>
+
+<ParamField path="--theme dark|light" type="string">
+  Emulates `prefers-color-scheme`.
+</ParamField>
+
+<ParamField path="--no-webgl" type="boolean">
+  Makes every `getContext("webgl")` and `getContext("webgl2")` call return `null`. Use it to verify that the SVG fallback renders correctly without shaders.
+</ParamField>
+
+<ParamField path="--preload <file.js>" type="string">
+  Runs a plain JavaScript file in the page before the page's own scripts. Use it for counters, stubs (`window.__driveSpeed = 0.04` for slow motion from frame 0), or hooks that wrap `requestAnimationFrame`.
+</ParamField>
+
+<ParamField path="--actions <file.json>" type="string">
+  Load actions from a JSON file instead of the second positional argument.
+</ParamField>
+
+### Action reference
+
+Actions are a JSON array of tuples. A missing or `null` selector in any action defaults to the first `.iso-plate`; for `"key"`, it focuses `[tabindex="0"]`.
+
+<Accordion title='"scroll" — scroll element into view'>
+
+```json
+["scroll", ".my-figure"]
+```
+
+Scrolls the element into the middle of the viewport. Put it before any shot of a figure that is below the fold.
+
+</Accordion>
+
+<Accordion title='"wait" — pause'>
+
+```json
+["wait", 1500]
+```
+
+Waits `ms` milliseconds of real wall-clock time.
+
+</Accordion>
+
+<Accordion title='"move" — glide the pointer'>
+
+```json
+["move", ".iso-plate", 0.7, 0.4]
+```
+
+Glides the mouse to `(fx, fy)` fractions of the element in 10 steps, firing `pointermove` events.
+
+</Accordion>
+
+<Accordion title='"click" — click'>
+
+```json
+["click", ".iso-plate", 0.5, 0.5]
+```
+
+Clicks the element, at the centre by default. `fx` and `fy` are optional fractions.
+
+</Accordion>
+
+<Accordion title='"drag" — drag gesture'>
+
+```json
+["drag", ".iso-plate", 0.3, 0.5, 0.7, 0.5, 20]
+```
+
+Presses at `(fx0, fy0)`, glides to `(fx1, fy1)` in `steps` (default 20) pointer events a frame apart, then releases. Uses real `PointerEvent`s, so handlers that call `setPointerCapture` work. Use it to test drag-to-turn interactions.
+
+</Accordion>
+
+<Accordion title='"key" — press a key'>
+
+```json
+["key", "ArrowRight"]
+["key", "7"]
+["key", "Shift", null, "ShiftRight"]
+["key", "Enter", null, "NumpadEnter"]
+```
+
+Focuses `sel` (default `[tabindex="0"]`) and presses a key. Digits send `DigitN`, letters `KeyX`, punctuation its proper code (`Space`, `Minus`, `Comma`…). Pass a third `code` argument for keys that share a name.
+
+</Accordion>
+
+<Accordion title='"slow" — slow motion'>
+
+```json
+["slow", 0.05]
+["slow", 1]
+```
+
+Runs the page's `requestAnimationFrame` timestamps and `performance.now` at `factor` × real time. `0.05` is 20× slow motion. Use `["slow", 1]` to restore real time. Note that `setTimeout` still runs on the wall clock.
+
+</Accordion>
+
+<Accordion title='"until" — wait for a condition'>
+
+```json
+["until", "document.querySelector('[data-readout]').textContent.includes('cold')", 8000]
+```
+
+Polls a JS expression every 25 ms until it is truthy, with an optional timeout in ms (default 10 s). Use it to wait for a phase change rather than guessing a fixed delay.
+
+</Accordion>
+
+<Accordion title='"eval" — run JavaScript in the page'>
+
+```json
+["eval", "window.__ink.join(' ')"]
+```
+
+Evaluates a JS expression in the page and prints the result. Promises are awaited. For complex expressions, use `--actions steps.json` to avoid shell quoting issues.
+
+</Accordion>
+
+<Accordion title='"shot" — take a screenshot'>
+
+```json
+["shot", "shots/hover.png"]
+["shot", "shots/close.png", null, 4, [200, 80, 220, 170]]
+```
+
+Screenshots the element (or a region of it in CSS px at the given scale). Prints the readout after each shot.
+
+</Accordion>
+
+<Accordion title='"sheet" — contact sheet'>
+
+```json
+["sheet", "shots/tour.png", 200, 16, null, 0.5]
+```
+
+Takes `count` frames `every` ms apart and tiles them into a numbered PNG. Arguments: `out, every, count, sel?, scale?, [x,y,w,h]?, columns?`. The frame spacing is `every` plus the capture time (60–200 ms); use `["slow", 0.05]` before the sheet to catch fast transitions.
+
+</Accordion>
+
+<Accordion title='"lines" — inline line-end check'>
+
+```json
+["lines", "shots/lines-apart.png"]
+```
+
+Runs the line-end check in the current pose (the one the preceding actions left the figure in). `out` writes the card with every floating endpoint ringed. A failure makes the run exit 1. Equivalent to running `scripts/lines.mjs` but mid-session, so you can check a non-rest pose.
+
+</Accordion>
+
+<Accordion title='"turn" — set a 3D turn value'>
+
+```json
+["turn", 90]
+["turn", 45, "tilt"]
+["turn", { "azimuth": 45, "tilt": 20 }]
+```
+
+Sets `window.__isoTurn` and waits two frames. A plain number sets the first turn group; a string names a specific group; an object sets several groups at once.
+
+</Accordion>
+
+<Accordion title='"orbit" — 3D contact sheet across angles'>
+
+```json
+["orbit", "shots/orbit.png", 0, 345, 15]
+["orbit", "shots/swap.png", 129.7, 130.2, 0.1, null, 6, [100, 40, 180, 140]]
+```
+
+A contact sheet across angles of the first turn group, each frame labelled with its angle in degrees. Arguments: `out, from, to, step, sel?, scale?, [x,y,w,h]?, columns?`. Run `0–345` at `15°` for a full orbit review; use `0.1°` steps across order changes.
+
+</Accordion>
+
+---
+
+## `scripts/lines.mjs` — line-end verification
+
+`lines.mjs` checks that every `.iso-line` in the card ends on something — another stroke, a dot, an outline, or a later fill. The audit sees the rendered drawing, not the markup, so it catches texture lines that stop mid-face even if the SVG looks clean.
+
+```sh
+# Check dark page
+node scripts/lines.mjs page.html --out shots/lines.png
+
+# Check light page
+node scripts/lines.mjs page-light.html --out shots/lines-light.png --reduced
+
+# Check an open (apart) pose via drive.mjs
+node scripts/drive.mjs page.html '[[\"key\",\" \"],[\"wait\",2000],[\"lines\",\"shots/lines-apart.png\"]]'
+```
+
+### What it checks
+
+Every open subpath of every `.iso-line` (seams, grooves, ribs, rule lines, ticks, needles, pointers, wires) must end within 1 viewBox px of another stroke, a dot, or an outline, or under a fill painted after it. A short straight mark up to 7 px long — a tick — needs at least one rooted end; both ends floating fails.
+
+The kit's own outlines, creases, bevels, and tube edges are not checked. Lines drawn with `fadeLineSvg` carry `data-free` on their faded ends and pass automatically. Mark an intentionally free end with `lineSvg(d, { free: true })` (or `"start"` / `"end"`) — but use it only for rule lines standing for printed text, a needle's tail, or a pointer's tip.
+
+When a floating end is found, the script prints:
+
+```text
+line ends: 3 of 1148 ends on 295 lines float
+  iso-line faint in it k -0.080  end  7.25 px from anything   at card 507.4,407.2   length 75.7   d M392.1 381.7L507.4 407.2…
+```
+
+The card coordinates in the output are ready to paste into `capture.mjs --zoom`. Fix every line until the count reaches 0.
+
+### Options
+
+<ParamField path="--out <png>" type="string">
+  Write a 2× shot of the card with every floating endpoint ringed in a coloured circle.
+</ParamField>
+
+<ParamField path="--tolerance <px>" type="number" default="1">
+  Distance in viewBox px within which an endpoint is considered rooted.
+</ParamField>
+
+<ParamField path="--select <css>" type="string" default=".iso-plate">
+  CSS selector for the element to check.
+</ParamField>
+
+<ParamField path="--wait <ms>" type="number" default="1500">
+  Time to let the page settle before checking.
+</ParamField>
+
+The script passes any remaining arguments to `drive.mjs`, so `--width`, `--height`, `--reduced`, and `--theme` all work.
+
+<Warning>
+  Run `lines.mjs` on both the dark and light pages, and in every resting pose. A line that passes at rest may float in the apart or open state.
+</Warning>
+
+### Exit code
+
+Exits `1` if any end floats, `0` if all ends are rooted.
+
+---
+
+## `scripts/inline-kit.mjs` — kit inlining
+
+`inline-kit.mjs` exports three functions that return the kit source as plain script text, with `export` keywords stripped. Use them to inline the kit into a standalone HTML page so it needs no module bundler and no network requests.
+
+```js
+import { kitScript, glScript, turnScript } from "../../scripts/inline-kit.mjs";
+
+const script = kitScript() + glScript() + LIVE_CODE;
+```
+
+<ResponseField name="kitScript()" type="() => string">
+  Returns the source of `kit/iso-kit.mjs` with `export` stripped. Provides all projection, solid, and line helpers. Prepend it to any live code that calls `lineOnTop`, `translateAlong`, `slabOf`, etc. at runtime.
+</ResponseField>
+
+<ResponseField name="glScript()" type="() => string">
+  Returns the source of `kit/gl.mjs` — `GLSL_ISO`, `glCamera`, `glLayer`, `smooth`, `burst`, and `settle`. Inline it after `kitScript()` on any page with a WebGL shader. A page whose live code calls no kit geometry function can inline `glScript()` alone. Do not redeclare `smooth`, `burst`, or `settle` in the same module script.
+</ResponseField>
+
+<ResponseField name="turnScript()" type="() => string">
+  Returns the source of `kit/turn.mjs` — the full 3D runtime (`TURN`, `TURN_CSS`). Use it for pages with turning groups: `script: turnScript() + glScript() + LIVE_CODE`. Its internals are prefixed `t3`/`T3_` so they inline alongside the kit and WebGL layer without name conflicts.
+</ResponseField>
+
+<Tip>
+  Everything must be one `<script type="module">`, so never redeclare a name that `kitScript`, `glScript`, or `turnScript` already defines. A duplicate `const smooth` is a `SyntaxError` that kills the whole page.
+</Tip>
+
+---
+
+## `scripts/publish.mjs` — community gallery
+
+`publish.mjs` copies a finished figure into a local clone of the community gallery and, with `--submit`, sends it as a pull request using the GitHub CLI (`gh`). Only source files are copied — the gallery's CI builds the pages and poster.
+
+```sh
+node scripts/publish.mjs examples/relief-valve \
+  --into ../anatomy-community \
+  --id relief-valve \
+  --title "Relief valve" \
+  --prompt "A cutaway relief valve showing the spring and poppet" \
+  --author yourname \
+  --minutes 45 \
+  --tokens 380k \
+  --submit
+```
+
+### Key flags
+
+<ParamField path="--into <dir>" type="string" required>
+  Path to a local clone of the anatomy-community repository.
+</ParamField>
+
+<ParamField path="--id <kebab-id>" type="string" required>
+  Kebab-case identifier for the figure. Becomes the directory name under `figures/<author>/`.
+</ParamField>
+
+<ParamField path="--title <string>" type="string" required>
+  Human-readable title for the gallery listing.
+</ParamField>
+
+<ParamField path="--prompt <string>" type="string" required>
+  The prompt used to generate the figure.
+</ParamField>
+
+<ParamField path="--author <github-user>" type="string" required>
+  GitHub username of the author.
+</ParamField>
+
+<ParamField path="--minutes <duration>" type="string">
+  Time spent making the figure. Accepts `45`, `45m`, `2h`, or `1h30m`. In Claude Code, this is read from the session log automatically; pass `--minutes` to override it.
+</ParamField>
+
+<ParamField path="--tokens <count>" type="string">
+  Tokens consumed. Accepts `380000`, `450k`, or `1.2M`. Read from the session log in Claude Code.
+</ParamField>
+
+<ParamField path="--no-session" type="boolean">
+  Omits session metrics entirely instead of reading them from the Claude Code log.
+</ParamField>
+
+<ParamField path="--submit" type="boolean">
+  Sends the pull request using `gh`. Without it, the command prints the git and `gh` commands to run manually when ready.
+</ParamField>
+
+<ParamField path="--yes" type="boolean">
+  Skips the confirmation prompt when `--submit` is set.
+</ParamField>
+
+<ParamField path="--dry-run" type="boolean">
+  Shows the plan without pushing or opening a PR.
+</ParamField>
+
+<ParamField path="--agent <name>" type="string" default='"Claude Code"'>
+  The agent that made the figure. Accepted values: `Claude Code`, `OpenCode`, `Codex`, `Antigravity`, `Other`.
+</ParamField>
+
+<ParamField path="--kind <string>" type="string">
+  Output type for the gallery listing. Accepted values: `SVG`, `SVG + WebGL`, `SVG + 3D`, `SVG + WebGL + 3D`.
+</ParamField>
+
+<ParamField path="--tags <a,b>" type="string">
+  Comma-separated tags.
+</ParamField>
+
+<Note>
+  Only source files (`.mjs`, `.js`, `.css`, `.html`, `.json`, `.md`, `.txt`, `.svg`) are copied to the gallery. Build artefacts, `node_modules`, `shots/`, and `.git/` are always excluded.
+</Note>
+
+---
+
+## `scripts/turn-check.mjs` — 3D figure checks
+
+`turn-check.mjs` runs four browser-based audits of figures with turning groups. Every check runs a planted control first — a control that does not fail means the check itself is broken.
+
+```sh
+# Fidelity: Node geometry against kit builders
+node scripts/turn-check.mjs build.mjs --fidelity
+
+# Order: recorded shapes vs. DOM fills (needs --verify build)
+node scripts/turn-check.mjs page-verify-light.html --order --step 1
+
+# Order on specific states (hinges, clips)
+node scripts/turn-check.mjs page-verify-light.html --order --states clip.json
+
+# Pops: first and second difference at 0.02° steps, no WebGL
+node scripts/turn-check.mjs page-light.html --pops --no-webgl --states tilt-path.json
+
+# Pops at 1° steps with output frames
+node scripts/turn-check.mjs page-light.html --pops --no-webgl --step 1 --out shots/pops
+
+# Line ends at 24 angles
+node scripts/turn-check.mjs page-light.html --lines
+
+# Performance budget at 1440 and 390 with 4× CPU throttle
+node scripts/turn-check.mjs page-light.html --perf --width 1440
+node scripts/turn-check.mjs page-light.html --perf --width 390 --throttle 4
+```
+
+### Flags
+
+<ParamField path="--fidelity" type="boolean">
+  Node-side check: every live prism against `k.extrude` / `G.prismOf`, every round and lathe against `G.lathe(smooth)`, and every tube against `tubePieces`, at the projection `P′(θ)`. Requires the build module to export `T` (from `turning()`). Control: one prism drawn 2° off must fail.
+</ParamField>
+
+<ParamField path="--order" type="boolean">
+  Compares recorded shapes (rendered into a WebGL z-buffer as part-ID colours, 2×) against the live layers' fills in DOM order. Fails on any live pair with 4 or more interior pixels at any angle. Requires a `--verify` build. Control: each live layer's order reversed at 0°, 90°, 180°, and 270° must give at least 1000 mismatched pixels.
+</ParamField>
+
+<ParamField path="--pops" type="boolean">
+  Takes the first difference (θ → θ + 0.02°) at every step and the second difference at 0.1° over a full turn. Fails on any surviving region or core of 6 or more pixels. Run with `--no-webgl` and the tour held. Control: one part's fill hidden for one frame must fail.
+</ParamField>
+
+<ParamField path="--lines" type="boolean">
+  Runs the line-end check at 24 angles. Control: a planted floating line must fail. Run on both light and dark pages.
+</ParamField>
+
+<ParamField path="--perf" type="boolean">
+  Drives 240 frames at 1.1° per frame through the controller inside `requestAnimationFrame` and measures script, task, style, and layout time per frame, plus the frame-interval median and p95, live elements, and writes/moves per frame. See `references/3d.md`, section 15 for budgets.
+</ParamField>
+
+<ParamField path="--step <deg>" type="number" default="0.02">
+  Angle step for `--pops` and `--order`.
+</ParamField>
+
+<ParamField path="--states <file.json>" type="string">
+  A JSON list of value objects to visit instead of angles — gestures, grasp poses, break-apart sequences.
+</ParamField>
+
+<ParamField path="--part <name>" type="string">
+  Limits the check to one named part.
+</ParamField>
+
+<ParamField path="--out <dir>" type="string">
+  Writes per-frame images to this directory for `--pops`.
+</ParamField>
+
+<ParamField path="--width <px>" type="number" default="1440">
+  Viewport width.
+</ParamField>
+
+<ParamField path="--height <px>" type="number" default="1100">
+  Viewport height.
+</ParamField>
+
+<ParamField path="--scale <n>" type="number" default="2">
+  Device pixel ratio.
+</ParamField>
+
+<ParamField path="--throttle <n>" type="number" default="1">
+  CPU throttle rate. `4` simulates a mobile device for `--perf` at 390 px.
+</ParamField>
+
+<ParamField path="--no-webgl" type="boolean">
+  Disables WebGL. Required for `--pops` (shaders produce visual changes that aren't geometry pops).
+</ParamField>
+
+---
+
+## `scripts/turn-bench.mjs` — 3D runtime benchmarks
+
+`turn-bench.mjs` measures the CPU time per part kind for a 3D figure's `emit` and `order` passes in Node.js, over 360 angles, taking the median of 7 rounds.
+
+```sh
+node scripts/turn-bench.mjs examples/turning-dial/build.mjs
+node scripts/turn-bench.mjs examples/turning-dial/build.mjs --rounds 7 --unit 1
+```
+
+The build module must export `T` (the object returned by `turning()`). If it also exports a `follow(values)` function, every angle is mapped through it before the emit pass — matching what the live page does.
+
+The output reports median CPU time in µs per frame for each part kind (`prism`, `round`, `lathe`, `tube`, etc.), plus the total `emit` and `order` time per frame.
+
+<ParamField path="--rounds <n>" type="number" default="7">
+  Number of timing rounds. The median is reported.
+</ParamField>
+
+<ParamField path="--unit <n>" type="number" default="1">
+  World-unit scale passed to `TURN.prepare`.
+</ParamField>

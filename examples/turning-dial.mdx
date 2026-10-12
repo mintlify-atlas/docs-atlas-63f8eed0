@@ -1,0 +1,116 @@
+---
+title: "Turning Dial: Anatomy's 3D mode in a combination lock"
+sidebarTitle: "Turning Dial"
+description: "A combination dial in true 3D with ~90 live metal parts, a robot hand with a three-hinge finger, and a 380-part stress test for performance measurement."
+---
+
+The turning-dial example is Anatomy's demonstration of the optional 3D mode. It is a combination dial mounted on a raised door plate. A small gold-and-chrome robot hand rests on the dial and turns with it; the index finger has three hinges and lifts to reveal a green LED underneath. About 90 parts are re-projected and re-shaded every frame as you drag. A pod on the hand breaks off as a free body when triggered. `stress.mjs` beside the main build is a 380-part hand in a cluttered workshop, used to measure performance across devices.
+
+## What makes 3D different
+
+In a normal SVG figure, every part is painted once at build time. In a 3D figure, the parts that belong to a turn group are reprojected and reshaded on every animation frame. A turn by `θ` is equivalent to the kit drawing at azimuth `a − θ`: the same four-tone shading rules apply, but the facing vectors rotate with the part.
+
+```
+A turn by θ == kit drawing at azimuth (a − θ)
+```
+
+Parts outside the turn group stay as committed SVG art. Only the live parts — those inside a `turn`, `slide`, `hinge` or `free` group — are rebuilt per frame. Keep static clutter around the turntable as plain SVG to preserve frame rate.
+
+## Parts and materials
+
+The ~90 live parts use metal material remaps that shift the tone ramp without changing the shading rules:
+
+| Material | Where used |
+|---|---|
+| Gold | Robot hand palm and knuckle covers |
+| Chrome | Dial face and bezel |
+| Steel | Hinge pins |
+| Gunmetal | Joint discs |
+| Brass | LED housing |
+
+Materials are declared per-part in `turning(P, { recorder })` via `turn-build.mjs`. Tones still come from facing angle; the material only remaps the ramp values.
+
+## Three-hinge finger
+
+The index finger is a hinge chain: three `hinge` groups nested inside each other, each with its own axis and range. The audit proves there are no ordering cycles at any combination of hinge angles:
+
+- **Knuckle** — proximal hinge, largest range
+- **Middle joint** — intermediate hinge
+- **Fingertip** — distal hinge, lifts to expose the LED
+
+The LED and its light pool are anchored to the fingertip group with `controller.anchor`, so they follow the finger through every hinge angle.
+
+## Free body: the pod
+
+One assembly is declared as a `free` group. When triggered it breaks off the hand, loses its parent constraint, and falls under gravity as a free body. Coaxial parts remain as fixed pictures with turning textures; only the free group's position and orientation update each frame.
+
+## Build command
+
+```bash
+node examples/turning-dial/build.mjs
+```
+
+Add `--light` for the light theme:
+
+```bash
+node examples/turning-dial/build.mjs --light
+```
+
+Add `--audit` to run the full 3D orbit audit:
+
+```bash
+node examples/turning-dial/build.mjs --light --audit
+```
+
+<Warning>
+The 3D orbit audit checks every turn angle and every motion clip frame for ordering cycles, contact violations and loose groups. It takes 15–20 minutes for 30 parts. Run it in the background after a geometry change; do not skip it before publishing.
+</Warning>
+
+## Performance: `stress.mjs`
+
+`stress.mjs` is a dense 380-part robot hand in a cluttered workshop. Its only purpose is to measure how many parts the 3D runtime can push at a given frame budget. Run it the same way as the main build:
+
+```bash
+node examples/turning-dial/stress.mjs
+```
+
+This writes `turning-stress.html` (or `turning-stress-light.html`). Open it in a browser and check the frame counter.
+
+Measured numbers from the README, on a heavily loaded machine:
+
+| Configuration | Frame rate |
+|---|---|
+| Small figure (~90 live parts), 1440 px | **60 fps** |
+| 380-part stress hand, 1440 px | **~20 fps** |
+| 380-part stress hand, 390 px (4× CPU throttle) | **13–15 fps** |
+
+<Note>
+The 3D mode is beta. It is proved on the turning-dial example and one internal test figure, not yet on a production figure. Use it when a part moving in depth is the idea — a dial or turntable that spins, fingers that flex, a piece that breaks off — and keep the surrounding clutter as static SVG art.
+</Note>
+
+## The orbit audit
+
+`kit/turn-audit.mjs` exports `orbitOrExit`, which sweeps every turn angle and every motion clip frame and checks:
+
+- No ordering cycles at any pose
+- Every contact is flush, tangent or rim-on-flat
+- No live line spans two moving groups
+- Every child group touches its parent link (or the audit calls the child loose)
+
+Run with `node scripts/turn-check.mjs` for fidelity, z-buffer order, pixel pops, line ends at 24 angles and frame timing in the browser.
+
+## How the build script is structured
+
+```js
+import { turning } from "../../kit/turn-build.mjs";
+import * as TA from "../../kit/turn-audit.mjs";
+import { turnScript, glScript } from "../../scripts/inline-kit.mjs";
+
+const T = turning(P, { recorder: R });
+// ... declare turn groups, add convex parts with materials ...
+const page = T.build({ theme, width: WIDTH, height: HEIGHT });
+```
+
+`turning(P, { recorder })` returns a builder `T`. Call `T.turn`, `T.hinge`, `T.slide` and `T.free` to declare groups; `T.part` to add convex parts with materials. `T.build` writes the HTML page with the turn runtime and WebGL LED shader inlined.
+
+The 3D runtime itself is `kit/turn.mjs`: `TURN.mount` attaches to a container, `TURN.cover` masks the front canvas, and `TURN.poseUniforms` pushes the current pose into the WebGL shader.

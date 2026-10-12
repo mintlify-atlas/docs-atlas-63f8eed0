@@ -1,0 +1,253 @@
+---
+title: "Verifying Anatomy figures with audits and screenshots"
+sidebarTitle: "Verification"
+description: "Run capture.mjs, drive.mjs, lines.mjs, and the geometry audit to catch every seam, staircase, crossing, and floating line end before anyone else does."
+---
+
+Look at the figure the way a demanding reviewer would before anyone else does. Rendering is cheap; guessing is expensive. Anatomy provides four verification tools that together catch what no single glance at 1× can find: `capture.mjs` for screenshots, `drive.mjs` for scripted sessions, `lines.mjs` for line-end checking, and `--audit` for geometry proof.
+
+## capture.mjs — screenshots
+
+`scripts/capture.mjs` starts its own headless Chrome, loads a file or URL, and clips to `.iso-plate` by default. It also prints the readout, any console errors, and whether the page scrolls sideways.
+
+```sh
+# Desktop 1440, DPR 2
+node scripts/capture.mjs page.html --out shots/desk.png
+
+# Phone 390px
+node scripts/capture.mjs page.html --out shots/phone.png --width 390
+
+# Pointer hover at 70% across the card
+node scripts/capture.mjs page.html --out shots/hover.png --hover 0.7,0.5
+
+# Key presses
+node scripts/capture.mjs page.html --out shots/keys.png --key ArrowRight,ArrowRight
+
+# Timed shots (ms from first shot)
+node scripts/capture.mjs page.html --out shots/tour.png --times 1200,2400,3600
+
+# 4× close-up of a region (card px)
+node scripts/capture.mjs page.html --out shots/joint.png --zoom 200,80,220,170
+
+# Reduced motion
+node scripts/capture.mjs page.html --out shots/still.png --reduced
+
+# One figure on a dev-server page
+node scripts/capture.mjs http://localhost:3000/docs \
+  --select "figure:nth-of-type(3) .iso-plate"
+```
+
+Both `capture.mjs` and `drive.mjs` start Chrome with WebGL on (`--enable-unsafe-swiftshader --ignore-gpu-blocklist`), so shader pages show correctly in still shots. Use `drive.mjs` for anything that needs timing or slow motion.
+
+## drive.mjs — scripted sessions
+
+`scripts/drive.mjs` runs a scripted session in headless Chrome. Use it for sequences: hover, then click, then type, then wait for a phase. Use it for slowed-down contact sheets that catch pops, and for the no-WebGL fallback check.
+
+```sh
+node scripts/drive.mjs page.html \
+  '[["wait",1500],["move",".rt-stage",0.7,0.4],["wait",600],["shot","shots/hover.png"]]'
+
+node scripts/drive.mjs page.html --actions steps.json --height 1300
+
+# Phone
+node scripts/drive.mjs page.html --actions steps.json --width 390
+
+# WebGL fallback
+node scripts/drive.mjs page.html --actions steps.json --no-webgl
+
+# Run slowly from the first frame
+node scripts/drive.mjs page-light.html --actions steps.json --preload slow.js
+```
+
+### Actions reference
+
+| Action | What it does |
+|--------|--------------|
+| `["wait", ms]` | Waits. |
+| `["move", sel, fx, fy]` | Glides the mouse there in 10 steps, firing `pointermove`. |
+| `["click", sel, fx?, fy?]` | Clicks, at the centre by default. |
+| `["drag", sel, fx0, fy0, fx1, fy1, steps?]` | Presses, glides in `steps` moves a frame apart, releases. |
+| `["key", key, sel?, code?]` | Focuses `sel` and presses a key. |
+| `["slow", factor]` | Runs `requestAnimationFrame` and `performance.now` at `factor` × real time. `0.05` is 20× slow motion. |
+| `["until", js, timeoutMs?]` | Polls a JS expression every 25 ms until truthy. |
+| `["eval", js]` | Runs JS in the page and prints the result. |
+| `["shot", out, sel?, scale?, [x,y,w,h]?]` | Screenshots an element or a region in CSS px. |
+| `["sheet", out, every, count, sel?, scale?, region?, columns?]` | Tiles `count` frames `every` ms into one PNG. |
+| `["turn", value, group?]` | 3D figures: sets `window.__isoTurn` and waits two frames. |
+| `["orbit", out, from, to, step, sel?, scale?, region?, columns?]` | 3D figures: a contact sheet across angles. |
+| `["lines", out?, sel?, options?]` | Runs the line-end check in the current pose. Exit 1 on any failure. |
+| `["scroll", sel]` | Scrolls the element into the middle of the viewport. |
+
+<Accordion title="Common drive.mjs traps">
+
+**Wait for a phase, don't guess.** Use `["until", "document.querySelector('[data-readout]').textContent.includes('main stage')", 8000]` rather than a fixed `wait`.
+
+**Slow mode doesn't slow timers.** `setTimeout` runs on the wall clock. During a long slowed capture, an idle tour's resume timer can restart the tour and close the mechanism mid-sheet. Before every slowed sheet, stop the tour and wait for rest: preload a stub for the timer, press `Escape`, then `until` the readout reaches the cold state.
+
+**Shots are correct after `scroll`.** A viewport tall enough for the whole card (`--height 1300`) is the simplest: the figure is visible at scroll 0, and its `IntersectionObserver` starts it.
+
+**Long eval strings break inline JSON quoting.** Put anything with `eval` or `until` in `--actions steps.json`.
+
+**Pages inline their live code as `<script type="module">`.** Top-level variables aren't visible to `eval`. Read state through the DOM instead: readout text, `aria-valuetext`, `data-*` attributes. To count frames or read a value per frame, install a hook with `--preload`.
+
+</Accordion>
+
+## lines.mjs — line-end check
+
+Every open subpath of every `.iso-line` in the card (seams, grooves, ribs, rule lines, ticks, needles, wires) must end within 1 viewBox px of another stroke, a dot, or an outline. `scripts/lines.mjs` checks this in headless Chrome.
+
+```sh
+node scripts/lines.mjs page.html --out shots/lines.png
+node scripts/lines.mjs page-light.html --out shots/lines-light.png --reduced
+
+# Check a non-resting pose
+node scripts/drive.mjs page.html \
+  '[["key"," "],["wait",2000],["lines","shots/lines-apart.png"]]'
+```
+
+Output when there are failures:
+
+```
+line ends: 3 of 1148 ends on 295 lines float
+  iso-line faint in it k -0.080  end  7.25 px from anything
+  at card 507.4,407.2   length 75.7   d M392.1 381.7L507.4 407.2…
+```
+
+`--out` rings every floating end on a 2× shot of the card. Run it on both themes and in every resting pose, and fix every line until it prints `line ends: 0`.
+
+| You see | Fix |
+|---------|-----|
+| Seam inset from corners of a box | `k.sideSeam(plan, z, P, steps)` as the slab's `inner`. |
+| Stiffener or panel line inset at both ends | Run it edge to edge. |
+| Ribs stopping short of their seams | `ribsOf(…, { seams: true })`, or adjust `s0`, `s1`. |
+| Ticks floating on a bare plate | Put them on a ruler strip, rooted on its edge. |
+| Vent or grille lines | Closed slots: a thin rounded outline, not a line. |
+| Rule lines on a label plate | `free: true` — they stand for text. |
+
+<Tip>
+  `lineSvg(d, { free: true })` marks an end that is meant to stop: rule lines that stand for printed text, a needle's tail, a pointer's tip. Use it for nothing else.
+</Tip>
+
+## The geometry audit
+
+Screenshots catch what you think to look at. A figure with pipes, cables, and round parts also needs the geometry checked, because a cable through a duct or a part drawn over the thing in front of it is invisible at 1× and obvious at 4×.
+
+Wire `kit/audit.mjs` into the build, then run:
+
+```sh
+node examples/raptor-engine/build.mjs --audit
+```
+
+Passing output:
+
+```
+clearance: 0 problems
+terminals: 0 ends not on a mount
+loose ends: 0
+screen folds: 0
+support: 0 unsupported solids · 0 hanging tubes · 0 sunk pairs
+depth order: 0 problems
+self-overlap: 0 chunks whose outline crosses itself on screen
+wobble: 0 smoothed profiles whose slope turns between its ends
+audit · 80 tubes · 267 solids · 478 items · 151.9 s
+audit passed
+```
+
+The audit prints `audit passed` or `audit failed: n problems` and exits non-zero on any failure. Every line counts, including mid-flight passes and `items with no shape`.
+
+The audit checks every frame of the springs opening and closing until they settle, every frame of a reversal 8 ms either side of each stagger boundary, and the prefix states.
+
+<Accordion title="Audit lines: meaning and fix">
+
+| Line | Meaning | Fix |
+|------|---------|-----|
+| `through A × B  clearance -2.4` | Tube A intersects B. | Reroute round B with ~1.5 radii to spare. |
+| `close A × B  clearance 0.2 < 0.6` | A passes B with less than half its radius to spare. | Nudge the route; widen harness lane spacing. |
+| `terminals: A end 1.40 from B` | A's end doesn't sit on its mount. | End the route on the surface along its normal; make the boss at least as wide as the flange. |
+| `loose ends: A end touches nothing that moves with it` | Apart, the end hangs in the air. | Give it a mount that moves with it, or mark it `free`. |
+| `self-overlap: A:3` | A chunk's outline crosses itself on screen. | Leave the port through an elbow ball, give the turn more straight leg, or bend in a plane that faces the viewer. |
+| `wobble: A dr/ds turns at s = …` | A smoothed profile has a slope that plateaus and reverses. | Write the profile as an analytic `r(s)` and pass `smooth: { slope }`. |
+| `solid A × B sunk 1.81 deep` | Two solids pass through each other in that frame. | Fix the order or the vectors; open the gap under an overhang. |
+| `screen folds: A turns 150° on screen` | The route doubles back on screen and reads as a cusp. | Route the leg before the turn sideways on screen. |
+| `order A is in front of B but drawn first` | A's surface is nearer but B paints over it. | `orderKeys` normally fixes these; a remaining case means a rule was dropped from a loop. |
+| `cycle A … (n the other way)` | A and B are each in front of the other somewhere. | Change the geometry: gap the pipe at its collar, split the band at the ring, end the rod on the ball. |
+| `crowding: A bend × B` | A's bend or end lands on B's outline and reads as a joint. | Reroute so the meeting is a clear crossing of two straights. |
+| `support: loose A` | A solid touches nothing that leads to the stand. | Add the bracket, stud, or plate that holds it. |
+
+</Accordion>
+
+<Note>
+  A zero audit is necessary, not sufficient. It can't see a seam, a staircase, or a texture that stops — and it only checks what you recorded. A stand-in shape that silences it is a bug, which is why it fails one. Run the line check, then look.
+</Note>
+
+## 4× close-up review checklist
+
+Build both themes and list every junction area: flanges, tees, elbows, ball joints, clamps, valves, bellows, bands, every curved body, every place a texture ends, every seam, stiffener, and rib row.
+
+```sh
+# 4× close-up of a joint region (coordinates in card px)
+node scripts/capture.mjs page.html --out shots/joint-dark.png --zoom 200,80,220,170
+node scripts/capture.mjs page-light.html --out shots/joint-light.png --zoom 200,80,220,170
+
+# Apart state
+node scripts/drive.mjs page.html --actions apart.json
+```
+
+Look at each PNG for these faults, in order:
+
+1. A line running through or into something
+2. A crossing whose nearer line is drawn behind
+3. A bend, end, or clamp sitting on another line's outline
+4. A flange standing off its port or sunk into it
+5. Tone blocks stepping across a curved surface, scallops, or a pale wedge
+6. A row of ribs, dots, or rule lines stopping in the middle of a surface
+7. A hairline across a tube's shine or shade at a chunk joint
+8. A seam notching the outline
+9. Shader content spilling past an opening's rim
+
+## The review questions
+
+Before shipping, answer three questions honestly:
+
+<CardGroup cols={3}>
+  <Card title="Instantly an object?" icon="eye">
+    At a glance it reads as one real, well-made thing you can name. Its mechanism maps to the concept in one sentence.
+  </Card>
+  <Card title="Rich at 1× and rewarding at 4×?" icon="magnifying-glass-plus">
+    30–60 solids for an inline figure. Every part rests on another and has a job. Small details belong to parts.
+  </Card>
+  <Card title="No bare face?" icon="square">
+    Every face has something true on it: screws at corners of plates, grooves, rulers, label plates, the brackets that hold things. Never decoration that belongs to no part.
+  </Card>
+</CardGroup>
+
+## 3D figures: additional checks
+
+```sh
+# Full orbit audit (run in background — can take 17+ minutes)
+node build.mjs --audit > audit.txt 2>&1 &
+
+# Quick iteration (undersamples — not the final proof)
+node build.mjs --audit --quick --only=order,continuity
+
+# Browser checks
+node scripts/turn-check.mjs build.mjs --fidelity
+node scripts/turn-check.mjs page-verify.html --order --step 1
+node scripts/turn-check.mjs page-verify.html --order --states clip.json
+node scripts/turn-check.mjs page.html --pops --step 1 --out shots/pops
+node scripts/turn-check.mjs page.html --lines
+node scripts/turn-check.mjs page.html --perf --width 1440
+node scripts/turn-check.mjs page.html --perf --width 390 --throttle 4
+```
+
+<Accordion title="3D verification checklist">
+
+- [ ] `turn audit passed` with the full state set (not `--quick`, not `--only`), clips included.
+- [ ] `--order` on `--states` for every hinge and clip; `--pops` on a 0.02° path for every hinge.
+- [ ] Fidelity passed; every control failing as designed.
+- [ ] Orbit sheets at 15°; 8× crops of every knuckle, crossing, and texture end at 8 angles, light and dark.
+- [ ] Materials read as metal on the light page: highlight bands move with the turn, nothing pops at a tone crossfade.
+- [ ] Every shader anchored to its group follows it at 0.1° steps; world effects don't turn.
+- [ ] Budgets measured at 1440 and 390 × 4, with the half-rate lever if a dense figure needs it.
+
+</Accordion>

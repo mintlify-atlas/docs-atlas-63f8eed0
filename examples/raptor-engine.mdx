@@ -1,0 +1,123 @@
+---
+title: "Raptor Engine: the Anatomy reference for dense pipework"
+sidebarTitle: "Raptor Engine"
+description: "A Raptor 2 engine in a test stand with 11 assemblies that explode apart, WebGL plume and steam, and a full geometry audit over 478 recorded items."
+---
+
+The raptor-engine example is the most complex figure that ships with Anatomy. It depicts a SpaceX Raptor 2 engine hanging from a vertical test stand: a deck on feet with a flame cone and deluge ring, two columns, and a crosshead with a load cell and gimbal actuators. Hover the engine to take it apart into 11 named assemblies with staggered springs; press Ignite to fire the engine and see the WebGL plume, shock diamonds, steam and splash. It is the reference to open whenever a figure has dense pipework, smooth shading on round parts, per-frame depth re-sorting, or a WebGL effect.
+
+## What it demonstrates
+
+- `kit/lathe.mjs` for all round parts: turbopumps, preburners, the main chamber, the nozzle bell, flanges, valves and fittings
+- `kit/tube.mjs` for all pipes, ducts, sense lines and the engine harness, with collars, clamps and fittings using `gaps` and `breaks`
+- `kit/audit.mjs` for geometry verification: `A.recorder`, `A.settle` and `A.auditOrExit` over 478 recorded items
+- `kit/gl.mjs` for four WebGL effects between the back and front SVG layers: exhaust plume with shock diamonds, water splash on the base plate, steam and a glow rim
+- 11 assemblies with names and `say` strings, staggered spring delays, and per-frame depth re-sorting as each assembly moves
+- The `PIECES` map and `STAGGER` order that control which assembly moves first on explode
+
+## The 11 assemblies
+
+| # | Name | `move` direction |
+|---|---|---|
+| 01 | Gimbal and thrust puck | stays at origin |
+| 02 | Oxygen turbopump | straight down |
+| 03 | Oxygen-rich preburner | further down |
+| 04 | Oxygen duct and main valve | out at 166° |
+| 05 | Engine controller and harness | out at 70° |
+| 06 | Injector and main chamber | straight down |
+| 07 | Hot-gas manifold | out at FTP angle |
+| 08 | Methane turbopump and fuel-rich preburner | out at FTP angle |
+| 09 | Downcomer and main fuel valve | out at 40° |
+| 10 | Plumbing | stays at origin |
+| 11 | Nozzle | straight down |
+
+The stand (`stand`) is always fixed. `STAGGER` sets the order in which the recorder assigns painter's keys; `SPRING` (`stagger: 0.035, stiffness: 64, damping: 14.2, substeps: 4`) controls the staggered delay and spring behaviour.
+
+## `lathe.mjs` for round parts
+
+Every bell, flange, valve body, turbopump casing and actuator is built with `G.lathe` (or `G.solidOf`, `G.disc`, `G.ringBand`). Smooth shading turns on automatically for any profile with a smooth knot. Long curved bodies are cut with `G.bandsOf` into depth-sortable bands that share one surface, with a single outline from `G.sidesOf`:
+
+```js
+import * as G from "../../kit/lathe.mjs";
+
+const V = G.viewOf(P);
+const KS = G.scaleOf(P);
+const ENGINE = G.frameOf([0, 0, Z_EXIT], [0, 0, 1], [1, 0, 0], [0, 1, 0]);
+```
+
+`G.frameOf` sets up a local coordinate frame for the engine so that polar angles and radial offsets read naturally in the engine's own coordinate system.
+
+## `tube.mjs` for pipes and harness
+
+Every pipe route is declared as a 3D polyline with `tubePieces` and drawn with `tubeSvg`. The `gaps` parameter cuts the tube wherever a flange, clamp or collar wraps it; `breaks` marks intentional visual breaks. The tube's shape is recorded so the audit can check it:
+
+```js
+function tubeItems(piece, route, r, { gaps = [], breaks = [], ... } = {}) {
+  const id = nameFor(name ?? `${piece}.tube`);
+  R.route(id, route, r, { owner: owner ?? id, ... });
+  tubePieces(route, r, P, { gaps, breaks, caps }).forEach((part, index) =>
+    put(piece, part.mid, tubeSvg(part, { tone }), {
+      name: `${id}:${index}`,
+      route: id,
+      chunk: index,
+      shapes: [A.tube(part.points, part.radii)],
+    }),
+  );
+}
+```
+
+## Geometry audit with 478 items
+
+The audit records every solid, tube segment and route at build time. `A.settle(R, P)` ray-casts every overlapping pair — at rest, apart and in every replayed explode frame — and sets the painter's keys. `A.auditOrExit(R, P)` is the `--audit` hook that runs all checks:
+
+```bash
+node examples/raptor-engine/build.mjs --audit
+```
+
+<Warning>
+The Raptor audit takes a few minutes. It checks 478 recorded items across the rest pose, the fully apart pose, and every intermediate frame of the explode animation. Do not skip it after changing pipe routes or adding parts.
+</Warning>
+
+A passing run ends with `audit passed`, every failing line at 0:
+
+```
+clearances       0
+terminals        0
+loose ends       0
+folds            0
+self-overlaps    0
+crowding         0
+stand-ins        0
+wobble           0
+saddles          0
+depth order      0
+audit passed
+```
+
+Fix any non-zero count in the geometry. A shape that silences the audit but does not match the drawn outline is a stand-in — the audit will catch it.
+
+## WebGL layers
+
+Four effects run in a `<canvas>` between the back SVG and the front SVG:
+
+| Effect | Trigger | Blending |
+|---|---|---|
+| Exhaust plume with shock diamonds | Firing state | Premultiplied, `screen` |
+| Mach discs in the plume | Firing state | Same canvas |
+| Water splash on the base plate | Firing state | Premultiplied, `screen` |
+| Steam rising from the deluge | Firing state | Premultiplied, `screen` |
+
+All shader points are built from `onFloor`, `onWallX` and `onWallY` or by marching `rayOf(vb) + t·towardViewer()` in world units × `uK`. The SVG still reads without WebGL.
+
+## The explode and depth re-sorting
+
+As each assembly moves, its depth order relative to every other assembly changes. The live script calls `settle` on every animation frame during the explode and re-applies the painter's keys. The `STAGGER` array controls which assembly departs first; the spring parameters control how quickly each one reaches its `move` offset.
+
+## Using this as a reference
+
+When your figure has:
+
+- **Round parts** (bells, flanges, valves, turbopumps): open `raptor-engine/build.mjs` and look for `G.lathe`, `G.solidOf`, `G.bandsOf` and `G.saddleOf`
+- **Pipes and cables**: look for `tubeItems`, the `gaps`/`breaks` patterns and how `crossingsOf` handles crossings on straights
+- **WebGL fire, exhaust or steam**: the raptor shader is the standard everything else is measured against — world-space, no-pop, seamless
+- **The audit**: copy the `R`, `record`, `put` and `tubeItems` scaffolding into your build and call `A.auditOrExit(R, P)` at the end

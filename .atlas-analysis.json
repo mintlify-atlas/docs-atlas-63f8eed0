@@ -1,0 +1,119 @@
+{
+  "projectType": "general",
+  "projectName": "Anatomy",
+  "projectDescription": "An agent skill for Claude Code, OpenCode, and Codex that builds crafted, interactive isometric SVG illustrations of real-world machines and complex systems, with optional WebGL shaders and 3D motion.",
+  "theme": "luma",
+  "primaryColor": "#8f8f8f",
+  "lightColor": "#fafafa",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/how-it-works",
+              "guides/workflow",
+              "guides/craft-rules",
+              "guides/output-types"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/overview",
+              "examples/dial-indicator",
+              "examples/raptor-engine",
+              "examples/ripple-tank",
+              "examples/turning-dial"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/webgl-shaders",
+              "advanced/3d-mode",
+              "advanced/react-nextjs",
+              "advanced/verification",
+              "advanced/publishing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Kit",
+            "pages": [
+              "api/overview",
+              "api/camera",
+              "api/solids",
+              "api/parts-library",
+              "api/svg-strings"
+            ]
+          },
+          {
+            "group": "Extensions",
+            "pages": [
+              "api/lathe",
+              "api/tube",
+              "api/audit",
+              "api/webgl",
+              "api/turn"
+            ]
+          },
+          {
+            "group": "React & Tools",
+            "pages": [
+              "api/react-components",
+              "api/scripts"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Agent skill for Claude Code, OpenCode, and Codex — invoke with /anatomy",
+    "Crafted isometric SVG figures with four-tone shading and painter's-order depth sorting",
+    "Optional WebGL shader layer for fire, water, caustics, and light effects inside the drawing",
+    "Optional 3D mode (beta) for parts that turn, hinge, slide, or break off in real-time",
+    "React/Next.js support with server/client split for static art and live motion",
+    "Geometry audit (kit/audit.mjs) proving no part passes through another, at rest or mid-animation",
+    "Headless Chrome verification scripts: screenshots, close-ups, line-end checks, and orbit audits",
+    "Community gallery publishing via scripts/publish.mjs",
+    "Zero npm dependencies — uses only Node.js built-in modules"
+  ],
+  "publicApiSurface": [
+    "fitProjection, iso, depthOf, towardViewer, screenRise — camera functions in iso-kit",
+    "slabOf, cylinder, extrude, ringOf, insetPlan, corners, haloOf — solid builders",
+    "onTop, lineOnTop, planOutline, ring, segment, topTicks, sideTicks, radialTicks — lines on faces",
+    "knurl, sideArc, sideSeam, coil — parts library",
+    "translateAlong, holdStill, axisVector — animation helpers",
+    "solidSvg, lineSvg, dotsSvg, wireSvg, faceTextSvg, figureSvg, fadedSvg, fadeLineSvg — SVG renderers",
+    "plateHtml, pageHtml — card and page builders",
+    "kitScript, glScript, turnScript — inline-kit helpers",
+    "lathe, solidOf, bandOfProfile, bandsOf, disc, ringBand, sphereOf, saddleOf, rodOut, ribsOf, dotsOf, fillet — lathe.mjs",
+    "tubePieces, tubeSvg, crossingsOf, runsOf — tube.mjs",
+    "recorder, settle, auditOrExit, overlapsOf, orderKeys — audit.mjs",
+    "glLayer, glCamera, GLSL_ISO, smooth, burst, settle — gl.mjs",
+    "turning, TURN.mount, TURN.cover, TURN.poseUniforms, orbitOrExit — turn.mjs / turn-build.mjs / turn-audit.mjs",
+    "Solid, Line, Wire, Dots, FaceText, IsoFigure, Plate — React components (draw.tsx)",
+    "useReadout, useLoop, useEased, useInView, useStillness, follow, spring — React hooks (live.tsx)",
+    "scripts/capture.mjs — headless screenshots",
+    "scripts/drive.mjs — scripted headless Chrome sessions",
+    "scripts/lines.mjs — line-end verification",
+    "scripts/publish.mjs — community gallery submission"
+  ]
+}

@@ -1,0 +1,563 @@
+---
+title: "React components and hooks for Anatomy figures"
+sidebarTitle: "React Components"
+description: "Server-safe drawing primitives from draw.tsx and client hooks from live.tsx for building interactive isometric figures in React and Next.js."
+---
+
+Anatomy's React layer is split into two files: `kit/react/draw.tsx`, which is server-safe and exports every drawing primitive, and `kit/react/live.tsx`, which carries `"use client"` and exports the hooks and utilities that drive animation, readout writes, and visibility tracking. Keep server code in `art.tsx` and client code in `live.tsx` — geometry runs on the server, and the client receives finished SVG path strings rather than raw coordinates.
+
+## Server/client split pattern
+
+The recommended file layout builds static parts as JSX in a server component and passes them as element props to a `"use client"` live component that handles the loop, pointer, keyboard, and aria.
+
+```tsx
+// art.tsx — server component
+import { IsoFigure, Plate, Solid, Line, Wire } from "../../iso/draw";
+import { BASE_ART } from "./geometry";
+
+export const RigArt = ({ base, dial }: { base: JSX.Element; dial: JSX.Element }) => (
+  <IsoFigure width={460} height={380} label="A pressure-relief rig">
+    {base}
+    {dial}
+  </IsoFigure>
+);
+
+export const BASE = <g key="base"><Solid paths={BASE_ART.slab} tone="mid" /></g>;
+export const DIAL = <g key="dial"><Solid paths={BASE_ART.dial} tone="hi" /></g>;
+```
+
+```tsx
+// live.tsx — client component
+"use client";
+import { useReadout, useLoop, follow, spring } from "../../iso/live";
+import { RigArt } from "./art";
+
+export function RigLive({ base, dial }: { base: JSX.Element; dial: JSX.Element }) {
+  const { anchor, say } = useReadout<SVGGElement>();
+  const kick = useLoop((dt, calm) => {
+    // update springs, call say(), return true while animating
+    return false;
+  }, false);
+  return <RigArt base={base} dial={dial} />;
+}
+```
+
+<Note>
+  Give the root of every element prop a stable `key` — for example `<g key="dial">…</g>` — to avoid React's key warning on large pages where element props arrive as deferred lazy chunks. See `references/react.md` for the full explanation.
+</Note>
+
+---
+
+## Server-safe components (`kit/react/draw.tsx`)
+
+### `<Solid>`
+
+Renders a `SolidPaths` object — the return value of `slabOf`, `cylinder`, `extrude`, `lathe`, and similar kit builders. Paints fill, shades, top face, crease, bevel, and outline in painter's order.
+
+```tsx
+import { Solid } from "../../iso/draw";
+<Solid paths={BASE_ART.slab} tone="mid" halo lit={false} />
+```
+
+<ParamField path="paths" type="SolidPaths" required>
+  The solid geometry object returned by any kit builder such as `slabOf`, `cylinder`, or `G.solidOf`.
+</ParamField>
+
+<ParamField path="tone" type='"hi" | "mid" | "lo" | "faint"' default='"hi"'>
+  Outline stroke tone. Base is `lo`, structure `mid`, subject `hi`.
+</ParamField>
+
+<ParamField path="crease" type='"hi" | "mid" | "lo" | "faint" | "none"' default='"faint"'>
+  Tone of the crease and bevel lines where the top face meets the visible sides. Pass `"none"` to suppress them both.
+</ParamField>
+
+<ParamField path="halo" type="boolean" default="false">
+  Renders a soft drop shadow (`iso-halo`) behind the solid. Use it under the base slab and under parts lifted off a surface.
+</ParamField>
+
+<ParamField path="lit" type="boolean" default="false">
+  Adds `data-lit` to the group, making the outline and crease render in the accent colour. Use on exactly one part per figure.
+</ParamField>
+
+<ParamField path="flat" type="boolean" default="false">
+  Suppresses shades and top face, leaving only the fill and outline. Used for thin plates and stencil-style parts.
+</ParamField>
+
+<ParamField path="className" type="string">
+  Extra CSS class added alongside `iso-solid` on the root `<g>`.
+</ParamField>
+
+<ParamField path="inner" type="React.ReactNode">
+  Line markup placed just before the outline (`iso-edge`). Use it for seams, weld lines, and band lines that must sit under the silhouette stroke — for example `<Line d={sideSeam(plan, z, P)} tone="faint" />`.
+</ParamField>
+
+---
+
+### `<Line>`
+
+A styled SVG path. Every `.iso-line` in the card is checked by `scripts/lines.mjs`: both endpoints must land on a stroke, a dot, or an outline, or lie under a later fill.
+
+```tsx
+import { Line } from "../../iso/draw";
+<Line d={groovePath} tone="faint" />
+<Line d={flowPath} tone="lo" flow />
+<Line d={rulePath} tone="lo" free />
+```
+
+<ParamField path="d" type="string" required>
+  An SVG path data string, such as the output of `lineSvg`, `onTop`, `segment`, or `sideSeam`.
+</ParamField>
+
+<ParamField path="tone" type='"hi" | "mid" | "lo" | "faint" | "lit" | "red" | "green" | "blue"' default='"lo"'>
+  Stroke colour token. Use `"faint"` for internal texture lines, `"lo"` for structure lines, `"lit"` for the accent.
+</ParamField>
+
+<ParamField path="dotted" type="boolean" default="false">
+  Renders the line with a dotted stroke pattern.
+</ParamField>
+
+<ParamField path="dashed" type="boolean" default="false">
+  Renders the line with a dashed stroke pattern.
+</ParamField>
+
+<ParamField path="flow" type="boolean" default="false">
+  Animates dashes along the path. Use it for things moving along a route — conveyor belts, flow arrows, fluid paths.
+</ParamField>
+
+<ParamField path="free" type='boolean | "start" | "end"' default="false">
+  Writes `data-free`, telling `scripts/lines.mjs` that an endpoint is intentionally free. Use only for rule lines that stand for printed text, a needle's tail, or a pointer's tip — never as a way to silence the check on a real floating end.
+</ParamField>
+
+---
+
+### `<Wire>`
+
+A connector with terminal dots at one or both ends. Combines a `<Line>` with `<circle>` elements at the endpoints.
+
+```tsx
+import { Wire } from "../../iso/draw";
+<Wire from={screenA} to={screenB} tone="lo" ends="both" size={1.2} />
+<Wire from={screenA} to={screenB} via={[midpoint]} tone="faint" ends="to" />
+```
+
+<ParamField path="from" type="[number, number]" required>
+  Screen coordinates `[sx, sy]` of the starting endpoint.
+</ParamField>
+
+<ParamField path="to" type="[number, number]" required>
+  Screen coordinates `[sx, sy]` of the finishing endpoint.
+</ParamField>
+
+<ParamField path="via" type="[number, number][]" default="[]">
+  Intermediate screen waypoints. The wire draws a polyline through all of them.
+</ParamField>
+
+<ParamField path="tone" type="LineTone" default='"lo"'>
+  Stroke and dot colour token.
+</ParamField>
+
+<ParamField path="dotted" type="boolean" default="false">
+  Dotted stroke pattern.
+</ParamField>
+
+<ParamField path="dashed" type="boolean" default="false">
+  Dashed stroke pattern.
+</ParamField>
+
+<ParamField path="flow" type="boolean" default="false">
+  Animated dashes along the wire.
+</ParamField>
+
+<ParamField path="ends" type='"both" | "from" | "to" | "none"' default='"both"'>
+  Which endpoints receive terminal dots. `"none"` draws only the line.
+</ParamField>
+
+<ParamField path="size" type="number" default="1.2">
+  Radius of the terminal dot circles in viewBox units.
+</ParamField>
+
+---
+
+### `<Dots>`
+
+A group of projected dot marks. A point may carry an optional third value as its opacity, which is how `dotsOf(…, { fade })` fades bolt circles out toward the limb instead of stopping them mid-surface.
+
+```tsx
+import { Dots } from "../../iso/draw";
+<Dots points={dotsOf(F, s, r, count, P)} tone="mid" size={0.5} />
+<Dots points={fading} tone="mid" pulse />
+```
+
+<ParamField path="points" type="Array<[number, number] | [number, number, number]>" required>
+  Screen points as `[sx, sy]` or `[sx, sy, alpha]`. When `alpha` is present and less than 1, that dot renders at that fill-opacity. Returned directly from `dotsOf` or `pointsAt`.
+</ParamField>
+
+<ParamField path="size" type="number" default="0.5">
+  Circle radius in viewBox units.
+</ParamField>
+
+<ParamField path="tone" type='"hi" | "mid" | "lo" | "faint"' default='"mid"'>
+  Fill colour token.
+</ParamField>
+
+<ParamField path="pulse" type="boolean" default="false">
+  Adds a CSS pulse animation staggered by dot index via `--pulse-at`.
+</ParamField>
+
+---
+
+### `<FaceText>`
+
+Renders text flat on an isometric face using a transform from `topMatrix` or `sideMatrix`.
+
+```tsx
+import { FaceText } from "../../iso/draw";
+import { topMatrix } from "../../iso/iso-kit";
+
+const T = topMatrix([x, y], z, P);
+<FaceText transform={T} size={3} tone="mid" anchor="start">LABEL</FaceText>
+```
+
+<ParamField path="transform" type="string" required>
+  An SVG `transform` attribute string from `topMatrix(at, z, P)` or `sideMatrix(at, z, P, "left" | "right")`.
+</ParamField>
+
+<ParamField path="size" type="number" default="3">
+  Font size in viewBox units.
+</ParamField>
+
+<ParamField path="tone" type='"hi" | "mid" | "lo" | "faint"' default='"mid"'>
+  Text colour token.
+</ParamField>
+
+<ParamField path="anchor" type='"start" | "middle" | "end"' default='"start"'>
+  SVG `text-anchor` alignment.
+</ParamField>
+
+<ParamField path="children" type="React.ReactNode" required>
+  The text content.
+</ParamField>
+
+---
+
+### `<IsoFigure>`
+
+Wraps SVG children in an accessible `<svg>` inside a `Stage` div that tracks intersection and adds `data-inview` for CSS animations.
+
+```tsx
+import { IsoFigure } from "../../iso/draw";
+
+<IsoFigure width={460} height={380} label="A cutaway of a relief valve showing the spring and poppet">
+  {/* svg children */}
+</IsoFigure>
+```
+
+<ParamField path="width" type="number" required>
+  SVG `viewBox` width. Set it to fit your projection; a typical inline figure is 420–520.
+</ParamField>
+
+<ParamField path="height" type="number" required>
+  SVG `viewBox` height.
+</ParamField>
+
+<ParamField path="label" type="string" required>
+  Accessible description on `aria-label`. State what the object is and what it shows — for example `"A pressure-relief valve, cutaway, showing the spring compressed against the seat"`.
+</ParamField>
+
+<ParamField path="className" type="string">
+  Extra class added alongside `iso-stage` on the wrapper `div`.
+</ParamField>
+
+<ParamField path="children" type="React.ReactNode" required>
+  SVG children, in painter's order from back to front.
+</ParamField>
+
+---
+
+### `<Plate>`
+
+The complete card component. Renders the figure number, title, hint, readout, legend keys, and caption around the figure content. The readout slot carries `data-readout` so `useReadout()` can write to it without a re-render.
+
+```tsx
+import { Plate } from "../../iso/draw";
+
+<Plate
+  fig="Fig 1"
+  title="Relief valve"
+  hint="press Space to open"
+  readout="seated · 0 bar"
+  keys={[{ mark: "hi", label: "spring" }, { mark: "lit", label: "poppet" }]}
+  caption="Spring force sets the cracking pressure."
+>
+  <IsoFigure …>…</IsoFigure>
+</Plate>
+```
+
+<ParamField path="fig" type="string" required>
+  Figure label shown in the top-left corner — for example `"Fig 1"` or `"Fig A"`.
+</ParamField>
+
+<ParamField path="title" type="string">
+  Subject name shown in the top-right corner.
+</ParamField>
+
+<ParamField path="hint" type="React.ReactNode">
+  Short interaction hint shown in the bottom-left corner — for example `"drag to turn"`.
+</ParamField>
+
+<ParamField path="readout" type="React.ReactNode">
+  Resting readout text shown in the bottom-right corner. Render the rest-pose string on the server so it is correct before hydration. Live code calls `say()` from `useReadout()` to update it without re-rendering.
+</ParamField>
+
+<ParamField path="keys" type="LegendKey[]" default="[]">
+  Legend entries rendered below the card. Each entry is `{ mark: KeyMark; label: string }`. Valid `mark` values are `"raised"`, `"flat"`, `"lit"`, `"edge"`, `"dim"`, `"dotted"`, `"dashed"`, `"red"`, `"green"`, and `"blue"`.
+</ParamField>
+
+<ParamField path="caption" type="React.ReactNode">
+  Caption text rendered below the legend.
+</ParamField>
+
+<ParamField path="children" type="React.ReactNode" required>
+  The figure content — typically a single `<IsoFigure>` tree.
+</ParamField>
+
+---
+
+## Client hooks (`kit/react/live.tsx`)
+
+All exports from `live.tsx` are client-only. Import them only from files that carry `"use client"` or from other client components.
+
+### `useReadout()`
+
+Finds the nearest `.iso-plate [data-readout]` element from its anchor ref and returns a `say` function that writes to it directly — no React state, no re-render.
+
+```tsx
+"use client";
+import { useReadout } from "../../iso/live";
+
+export function RigLive({ base }: { base: JSX.Element }) {
+  const { anchor, say } = useReadout<SVGGElement>();
+
+  // In the frame loop:
+  say(`open · ${Math.round(pressure)} bar`);
+
+  return (
+    <g ref={anchor}>
+      {base}
+    </g>
+  );
+}
+```
+
+<ResponseField name="anchor" type="React.RefObject<T>">
+  Attach this ref to the root element of your live component. `useReadout` walks up to the nearest `.iso-plate` from it to find the readout slot.
+</ResponseField>
+
+<ResponseField name="say" type="(text: string) => void">
+  Writes `text` to the card's `[data-readout]` element. Deduplicates: if `text` equals the last written value, the write is skipped.
+</ResponseField>
+
+---
+
+### `useLoop(tick, running)`
+
+Drives a `requestAnimationFrame` loop while `running` is true and while `tick` returns true. Clamps `dt` to `1/30` s to prevent jumps after a tab regains focus.
+
+```tsx
+const kick = useLoop((dt, calm) => {
+  const settled = spring(velState, targetVelocity, dt, 120, 14, calm);
+  say(`${Math.round(velState.at)} rpm`);
+  return !settled;
+}, inView && !stillness);
+```
+
+<ParamField path="tick" type="(dt: number, calm: boolean) => boolean" required>
+  Called each animation frame with the elapsed time in seconds and whether the user prefers reduced motion. Return `true` to keep the loop running, `false` to stop it.
+</ParamField>
+
+<ParamField path="running" type="boolean" required>
+  The loop starts when this becomes `true` and stops (with `cancelAnimationFrame`) when it becomes `false`.
+</ParamField>
+
+<ResponseField name="kick" type="() => void">
+  Restarts the loop from outside — for example when a key press or pointer event begins a new motion. Safe to call when the loop is already running (it is a no-op then).
+</ResponseField>
+
+---
+
+### `follow(current, target, dt, seconds, calm)`
+
+Exponential easing toward a target. Returns the new value. In calm mode returns `target` immediately.
+
+```tsx
+import { follow } from "../../iso/live";
+
+// Inside useLoop tick:
+shown.current = follow(shown.current, target, dt, 0.18, calm);
+```
+
+<ParamField path="current" type="number" required>
+  The current value.
+</ParamField>
+
+<ParamField path="target" type="number" required>
+  The value to ease toward.
+</ParamField>
+
+<ParamField path="dt" type="number" required>
+  Elapsed time in seconds since the last frame.
+</ParamField>
+
+<ParamField path="seconds" type="number" required>
+  Time constant of the exponential decay — roughly the time to reach 63 % of the way to the target.
+</ParamField>
+
+<ParamField path="calm" type="boolean" default="false">
+  When true, snaps instantly to `target`. Pass `asksForStillness()` or the value from `useStillness()`.
+</ParamField>
+
+---
+
+### `spring(state, target, dt, stiffness, damping, calm)`
+
+A sub-stepped spring simulation. Mutates `state` in place and returns `true` when the spring has settled.
+
+```tsx
+import { spring, type Spring } from "../../iso/live";
+
+const pressure: Spring = { at: 0, rate: 0 };
+
+// Inside useLoop tick:
+const settled = spring(pressure, targetPressure, dt, 120, 14, calm);
+say(`${Math.round(pressure.at)} bar`);
+return !settled;
+```
+
+<ParamField path="state" type="Spring" required>
+  Mutable spring state object `{ at: number; rate: number }`. Mutated in place each frame.
+</ParamField>
+
+<ParamField path="target" type="number" required>
+  The value the spring is pulling toward.
+</ParamField>
+
+<ParamField path="dt" type="number" required>
+  Elapsed time in seconds. Sub-stepped at up to 240 steps per second for stability.
+</ParamField>
+
+<ParamField path="stiffness" type="number" required>
+  Spring constant. Higher values make the spring faster and stiffer.
+</ParamField>
+
+<ParamField path="damping" type="number" required>
+  Damping coefficient. In calm mode this is overridden with critical damping (`2√stiffness`).
+</ParamField>
+
+<ParamField path="calm" type="boolean" default="false">
+  When true, applies critical damping so the spring settles in one step.
+</ParamField>
+
+<ResponseField name="settled" type="boolean">
+  `true` when both `state.at === target` and `state.rate === 0`. Use it to stop the loop: `return !settled`.
+</ResponseField>
+
+---
+
+### `useEased(target, seconds)`
+
+Drives a single eased number as React state. Suitable for small figures with one or two eased values; use `useLoop` with refs for anything heavier.
+
+```tsx
+import { useEased } from "../../iso/live";
+
+const angle = useEased(targetAngle, 0.18);
+// angle is a React state value that follows targetAngle
+```
+
+<ParamField path="target" type="number" required>
+  The value to ease toward.
+</ParamField>
+
+<ParamField path="seconds" type="number" default="0.12">
+  Easing time constant passed to `follow`.
+</ParamField>
+
+<ResponseField name="value" type="number">
+  The eased number as React state. Triggers a re-render each frame until settled.
+</ResponseField>
+
+---
+
+### `useInView(ref)`
+
+Returns `true` when the referenced element is intersecting the viewport (with a 120 px root margin). Drives the `running` flag for `useLoop` so animation stops when the figure scrolls off screen.
+
+```tsx
+import { useInView } from "../../iso/live";
+
+const ref = React.useRef<HTMLDivElement>(null);
+const inView = useInView(ref);
+const kick = useLoop(tick, inView && !stillness);
+```
+
+<ParamField path="ref" type="React.RefObject<Element | null>" required>
+  A ref attached to the element to observe. The observer reconnects automatically whenever the ref's current value changes.
+</ParamField>
+
+<ResponseField name="inView" type="boolean">
+  `true` when the element is visible in the viewport (plus 120 px margin), `false` otherwise.
+</ResponseField>
+
+---
+
+### `useStillness()`
+
+Subscribes to `prefers-reduced-motion: reduce` with `useSyncExternalStore`. Returns `true` when the user has requested reduced motion. Safe to call during rendering on the client; returns `false` during SSR.
+
+```tsx
+import { useStillness } from "../../iso/live";
+
+const stillness = useStillness();
+const kick = useLoop(tick, inView && !stillness);
+```
+
+---
+
+### `asksForStillness()`
+
+The same check as `useStillness` but as a plain function — `window.matchMedia("(prefers-reduced-motion: reduce)").matches`. Safe only inside effects and frame loops, not during rendering.
+
+```tsx
+import { asksForStillness } from "../../iso/live";
+
+// Inside a useLoop tick callback:
+const calm = asksForStillness();
+shown.current = follow(shown.current, target, dt, 0.18, calm);
+```
+
+---
+
+### `Stage`
+
+The wrapper component that `IsoFigure` uses internally. Attaches a ref to a `<div>`, calls `useInView`, and sets `data-inview` when the element is visible. CSS animations key on `[data-inview]` to start only when the figure is on screen.
+
+```tsx
+import { Stage } from "../../iso/live";
+
+// IsoFigure renders:
+<Stage className="iso-stage">
+  <svg …>{children}</svg>
+</Stage>
+```
+
+<Tip>
+  You rarely need `Stage` directly — `IsoFigure` wraps it for you. Use it only when building a custom figure root that needs the same in-view tracking without the `<svg>` wrapper.
+</Tip>
+
+<ParamField path="className" type="string" required>
+  Class string applied to the `<div>`. `IsoFigure` passes `"iso-stage"` (plus any extra class you give it).
+</ParamField>
+
+<ParamField path="children" type="React.ReactNode" required>
+  Content inside the stage div.
+</ParamField>

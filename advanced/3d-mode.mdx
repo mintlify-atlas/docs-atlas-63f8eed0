@@ -1,0 +1,244 @@
+---
+title: "3D mode: turning groups and live isometric parts"
+sidebarTitle: "3D Mode"
+description: "The optional 3D mode for Anatomy lets parts turn, hinge, slide, and break off while staying rendered in the kit's own isometric projection every frame."
+---
+
+The optional 3D mode — called "turning groups" — lets some parts of a figure move as rigid bodies: a dial or turntable that spins, fingers that flex, a piece that breaks off and tumbles. Those parts are re-projected and re-shaded every frame by the kit's own rules, painted in an order solved from separating planes. Everything else stays ordinary static kit art.
+
+<Warning>
+  **Beta status.** The engine is proved on `examples/turning-dial` and one test figure (a desk fan built from the reference document alone), not yet on a production figure. Turn one subject at a time, keep clutter static, and measure your figure against the performance budgets before adding parts.
+</Warning>
+
+## When a figure earns 3D
+
+Only when the motion is the explanation: a dial whose numbers are read as it turns, a turntable that shows an object from every side, a wheel pack, a hand that grips or breaks. Never as decoration. A figure that only needs a part to slide or a needle to swing stays 2D — `translateAlong` and a re-drawn needle are cheaper and exact.
+
+## Core concept: the identity
+
+Turning a group by θ about a vertical axis is exactly the kit drawing at azimuth `a − θ`, because the kit's light is camera-locked. So every frame of a turn group is the kit's own picture at `P′(θ)`, shifted. The kit builders at `P′(θ)` are the fidelity reference, and every kit screen-space audit runs unchanged at `P′(θ)`.
+
+## The four group kinds
+
+<CardGroup cols={2}>
+  <Card title="turn" icon="rotate">
+    Rotation about a vertical axis through `pivot`. Value in degrees — full continuous rotation.
+  </Card>
+  <Card title="slide" icon="arrows-left-right">
+    Translation along a direction, from `0` to `travel` world units.
+  </Card>
+  <Card title="hinge" icon="link">
+    Rotation about any axis through a point, within a `range` in degrees. Used for fingers, flaps, pawls.
+  </Card>
+  <Card title="free" icon="cube">
+    Any rotation plus translation, set by the figure each frame. Used for parts that break off and tumble.
+  </Card>
+</CardGroup>
+
+Groups nest: a pose is relative to the parent. Every constructor takes world coordinates at rest (every group value 0).
+
+## The turning() API
+
+```js
+import * as k from "../../kit/iso-kit.mjs";
+import * as A from "../../kit/audit.mjs";
+import { turning } from "../../kit/turn-build.mjs";
+import * as TA from "../../kit/turn-audit.mjs";
+import { turnScript, glScript } from "../../scripts/inline-kit.mjs";
+
+export const P = k.fitProjection(points, W, H, { pad: 22, azimuth: 40, elevation: 31 });
+export const R = A.recorder(P);
+export const T = turning(P, { recorder: R });
+```
+
+### Scene setup
+
+| Call | What it does |
+|------|--------------|
+| `T.group(name, { turn: { pivot: [x, y] } })` | Rotation about the vertical through `pivot`. |
+| `T.group(name, { parent, hinge: { point, axis, range: [lo, hi] } })` | Hinge group, value in degrees within range. |
+| `T.group(name, { parent, slide: { direction, travel } })` | Slide group, value `0…travel`. |
+| `T.group(name, { parent, free: { origin } })` | Free rigid body, value `{ R, t, world? }` or `null` for rest. |
+| `T.layer(name)`, `T.stack([…])` | Live layers and the full stack of live and static layer names, back to front. |
+| `T.build({ statics, poses, verify })` | Solves every pair, proves every static item's layer, packs page data. |
+
+### Part constructors
+
+| Constructor | Part |
+|-------------|------|
+| `T.prism({ plan, z, h, bevel })` | Upright kit slab. |
+| `T.round({ F, s0, s1, r, ends })` | Cylinder or cone frustum; ends can be `"flat"`, `"dome"`, or `"open"`. |
+| `T.ball({ c, r, flats })` | Sphere; each flat `{ n, d }` draws a rim as a cap. Without flats it is a fixed picture. |
+| `T.tube({ route, r, hue, material, gaps })` | Kit `tubePieces` semantics, chunked. Route runs mount surface to mount surface. |
+| `T.fixed({ svg, anchor, shapes })` | Kit markup whose picture never changes under the group's motion, moved by translate. |
+| `T.plane({ part, o, u, v, svg })` | Line or text markup in a plane of the part (ticks, numerals, label plates), faded by facing. |
+| `T.billboard({ part, at, normal, svg })` | Screen-aligned markup at a projected point. SVG is in viewBox px — multiply world sizes by `G.scaleOf(P)`. |
+
+A minimal build:
+
+```js
+const dial = T.group("dial", { turn: { pivot: [0, 0] } });
+const lift = T.group("f2.mcp", { parent: dial, hinge: { point: C1, axis: w, range: [-22, 0] } });
+const hand = T.layer("hand");
+T.stack(["back", "hand", "front"]);
+
+T.round({
+  name: "dial.body",
+  group: dial,
+  layer: hand,
+  F: VERT(0, 0),
+  s0: 10, s1: 14.4, r: 50,
+  material: "steel",
+  details: { ribs: { s0: 10.9, s1: 13.7, count: 150, seams: true, tone: "lo" } },
+});
+
+const out = T.build({ statics: R.items, poses, verify: argv.includes("--verify") });
+A.settle(R, P);
+if (argv.includes("--audit")) {
+  A.auditOrExit(R, P);
+  TA.orbitOrExit(T, R, P, {
+    sweep: { at: (x) => follow({ dial: x }), from: 0, to: 360, frame: 0.3 },
+  });
+}
+```
+
+### Runtime API: TURN.mount
+
+```js
+// live.js
+const controller = TURN.mount(stage, DATA.turn, {
+  follow,
+  onHold: () => (touring = false),
+  onFrame: () => paint(),
+});
+
+function tick(now) {
+  // …
+  controller.set({ dial: angle, lift });
+  frame = visible && moving ? requestAnimationFrame(tick) : 0;
+}
+```
+
+| Call | What it does |
+|------|--------------|
+| `TURN.mount(stage, data, options)` | Binds every live layer, renders the rest pose, installs `window.__isoTurn`. |
+| `controller.set(values)` | Sets group values and renders synchronously. |
+| `controller.angleAt(clientX, clientY, z, group)` | Pointer as an unwrapped angle for drag-to-turn. |
+| `controller.pose(name)` | The group's world pose `{ R, t }`. |
+| `controller.detach(name)` | A `{ world: true, R, t }` value continuing a free group's current pose in world frame (no jump). |
+| `controller.anchor(group, restPoint, restDir?)` | Where a rest-world point of a group is now: `{ world, screen, direction }`. Used to anchor shader effects. |
+| `controller.destroy()` | Cleanup; return from a React effect. |
+
+## Materials
+
+A part's material is one option on its constructor (`material: "gold"`). Tones still come from facing exactly as the kit's do; the material remaps the ramp.
+
+| Material | Look |
+|----------|------|
+| `gold` | Champagne-gold anodised aluminium: warm pale top, bronze shadows. |
+| `chrome` | Bright polished steel: a light far band, a dark reflection band, a bright band, and a white highlight. Non-monotonic on purpose — the bands move with facing, never jump. |
+| `steel` | Satin steel, monotonic and cool. |
+| `gunmetal` | Dark blue-grey metal with light dots. |
+| `rubber` | Black rubber and cable sheath with a soft sheen. With `hue`, a tube becomes a coloured sheath. |
+| `brass`, `copper` | Warm metals for fittings, ports, valves. |
+
+On a light page, materials are far stronger than kit greys. Keep the ground (bench, base, plates) in kit tones and put materials on the subject, so it reads as the lit, finished object.
+
+## Contacts and joints
+
+<Warning>
+  **Contacts must be flush, tangent, or rim-on-flat.** A rim on a sphere is not separable — give the ball a flat (`T.ball({ flats })`) and land the rim on it. A pad sunk into its host fails the audit.
+</Warning>
+
+For hinged joints, the two links stay at least 0.2 apart, bridged by a knuckle disc on the child group: coaxial with the hinge axis, touching the parent's link flush or tangent. A disc coaxial with its hinge is invariant under the hinge, so it never collides.
+
+## Live tubes: bend rules
+
+A bend of radius `R` in a plane tilted `θ` from horizontal needs **R ≥ 2r / sin²(e − θmax)**, where `θmax` is the plane's tilt plus the pitch range of every hinge it rides on. At e = 30°:
+
+| θmax | 0° | 5° | 8° | 10° | 12° | 15° | 20° |
+|------|----|----|-----|-----|-----|-----|-----|
+| R ≥  | 8r | 11r | 14r | 17r | 21r | 30r | 66r |
+
+8r is the bound on a horizontal plane — take 10r as a working margin. Past about 15° no practical radius holds; turn inside a fitting or run the line straight.
+
+## Free groups: parts that break off
+
+```js
+T.group("pod", { parent: dial, free: { origin } });
+```
+
+At rest (`null`) the piece sits exactly where it was built, attached. To break it off, start setting a pose relative to the parent. There is no single-frame change because the first value is the identity.
+
+- **Falling onto the turntable:** keep the parent as the turntable group, so the piece lands and then turns with it.
+- **Falling off onto the bench:** switch to world space with `controller.detach(name)`, then integrate from there.
+
+Give the build the flight clips in `poses()`, and the audit the same clips. A pure function of time can be sampled by the build and the audit, and played backwards.
+
+## Performance
+
+Measured by `turn-bench` (Node CPU) and `turn-check --perf` (browser, 240 frames at 1.1°).
+
+| Kind | Relative cost |
+|------|--------------|
+| `fixed` (vertical rounds, plain balls) | 0.5 |
+| `prism` | 1× |
+| tube chunk | 2–3× |
+| `round` | 2.5–4× |
+| `ball` with flats | 8–10× |
+| `lathe` | ~25× |
+
+<Tip>
+  A plain ball or vertical round is a fixed picture and nearly free. Use `T.ball({ flats })` only when a rim must land on the sphere — it costs as much as nine prisms.
+</Tip>
+
+| Budget | Small figure (≤ 50 weight) | Dense figure (≤ 230 weight) |
+|--------|---------------------------|------------------------------|
+| Node CPU per frame | ≤ 2 ms | ≤ 7 ms |
+| Browser task at 1440, DPR 2 | ≤ 6 ms | ≤ 13 ms (60 fps) |
+| Main thread at 390, DPR 3, 4× CPU | ≤ 16 ms | ≤ 33 ms (30 fps) |
+| `data.turn` JSON | — | ≤ 250 KB |
+
+A small figure runs at 60 fps; a 380-part hand is approximately 20 fps at 1440px with the half-rate lever.
+
+To enable adaptive half-rate in your loop:
+
+```js
+// In the live component's tick function
+const avg = controller.stats().ms; // exponential moving average
+const halfRate = avg > 14;
+// render live layers on alternate frames when halfRate is true
+```
+
+## Verification
+
+```sh
+node build.mjs --audit                                            # kit audit + orbit audit
+node scripts/turn-check.mjs build.mjs --fidelity                 # prisms, rounds, tubes vs kit reference
+node scripts/turn-check.mjs page-verify.html --order --step 1    # painter's order vs z-buffer
+node scripts/turn-check.mjs page.html --pops --step 1            # no pops at every degree
+node scripts/turn-check.mjs page.html --lines                    # 0 floating line ends at 24 angles
+node scripts/turn-check.mjs page.html --perf --width 1440        # browser performance
+node scripts/turn-check.mjs page.html --perf --width 390 --throttle 4
+```
+
+The orbit audit runs every pair, proven at hundreds of states: `turn audit passed` (full run, not `--quick`, not `--only`) is the bar. Budget about 30–40 s per part for a full run, so run it in the background:
+
+```sh
+node build.mjs --audit > audit.txt 2>&1 &
+```
+
+<Note>
+  `--quick` undersamples — it checked 100 halving candidates against 800 in the full run and missed 20 `continuity` failures. Only the full run's `turn audit passed` counts.
+</Note>
+
+### Key orbit audit lines
+
+| Line | Fails on | Fix |
+|------|----------|-----|
+| `separation` | Same-group pair with no separating plane | Split, a flat, or a flush contact |
+| `unseparated` | Cross-group pair interpenetrating | Fix the contact or the motion |
+| `cycles` | A cycle among overlapping parts | `T.split` on the suggested plane |
+| `continuity` | Tone step > 1/16 band, a birth > 2 px², outline jump | Find the angle with an orbit sheet at 0.1° |
+| `folds`, `self`, `endon` | Live routes at every angle and pose | Bend radius with the pitch range (section 5 of `3d.md`) |
+| `rigid` | Kit clearances, terminals, loose supports | As in the kit audit; check knuckle disc contacts |

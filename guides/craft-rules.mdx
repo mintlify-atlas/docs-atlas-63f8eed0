@@ -1,0 +1,175 @@
+---
+title: "Craft rules for polished isometric figures"
+sidebarTitle: "Craft Rules"
+description: "The rules separating a crafted figure from a diagram: solids, four-tone shading, painter's order, resolved lines, and the anti-patterns reviewers rejected."
+---
+
+Every rule in this page came from a figure that was either rejected or approved by a demanding reviewer. They are not aesthetic preferences — they are the specific things that make a drawing read as a real object or fall apart as a diagram. The full reasoning, recipes, and code for each rule live in `references/craft.md`; this page gives you the substance you need to understand why each rule exists.
+
+## What "crafted" means
+
+The approved figures share five qualities:
+
+1. **A real object you could build.** The reader names it at a glance: a test rig, a dial indicator, a chest of drawers, a gantry plotter, a lock. It is invented for the subject, never traced from a reference.
+2. **Many small, precise parts.** A good inline figure has 30–60 solids and 300–500 paths. Every part rests on another part, aligns to its neighbours, and has a job. Density comes from structure (feet, rails, stops, bushings, knobs), not from texture.
+3. **Volume.** Parts have real thickness, sides shaded in four tones, lighter tops, bevels that catch light, and a soft halo underneath.
+4. **Calm.** Thin 0.6 px lines and a restrained palette. One lit accent tells the eye where to look. Motion is eased and slow enough to follow.
+5. **Truth.** The readout shows live, correct numbers, and the motion follows the real model: springs with real stiffness, true sizes and thresholds.
+
+## Core rules
+
+### Solids, not wireframes
+
+Every part is filled in paper colour and painted in order, so things in front hide things behind. No see-through edges and no dashed hidden lines. A wireframe box where the back edges show is one of the most reliable ways to make a figure read as a diagram instead of an object.
+
+### Let the kit shade
+
+`extrude` returns four side tones by facing plus a lighter top. Keep it for anything with height, and use `flat` only for floors and inlays thinner than 1 unit. The kit's shading is consistent and physically grounded — fighting it produces uneven results.
+
+### Tone hierarchy
+
+Base and feet are `lo`, structure is `mid`, and the subject is `hi`. Exactly one accent is `lit` (white in dark, black in light): the part the reader should watch.
+
+| Element | Tone |
+|---|---|
+| Base, feet, floors | `lo` |
+| Structure: posts, rails, frame, carriage, case | `mid` |
+| The subject: the thing being explained | `hi` |
+| The part the reader should watch now | `lit` (one only) |
+| Grooves, inset outlines, floor grid | `faint` |
+| Minor ticks | `lo` |
+| Major ticks | `mid` |
+| Zero mark, pointer line | `hi` |
+| Screws and rivets | dots `mid` at 0.4–0.55 |
+| Crease (top/side join) | `faint` (default), `lo` on hi parts |
+
+Use colour only when colour is the subject (such as red, green, and blue channels). A fluid is not colour by default: oil in a sight glass, water in a tank, and coolant in a pipe are tints of the figure's own inks.
+
+### Small precise detail, never noise
+
+Use bevels of 0.4–1.6, grooves inset 3–5 from an edge, screws as 0.4–0.55 dots with a ring at the corners of plates, knurls on knobs, ruler ticks every 4–5 units with a major every 5th, and a label plate with three rule lines. Each detail belongs to a part — it exists because the real object has it.
+
+### Lines resolve
+
+Every line ends on something: a face, another line, or a terminal dot. Connectors are `Wire`s whose terminal dots land on objects. There are no leader lines, balloons, dimension arrows, or labels floating in the air.
+
+The line-end check — `node scripts/lines.mjs page.html` — fails every line end that touches nothing. Run it to zero before finishing.
+
+### No pipe or cable passes through anything
+
+Not through another pipe, cable, or solid — at rest, apart, or in any frame of the explode. Keep about 1.5 radii of clearance to everything but a line's own connection. Run lines beside the structure rather than across the subject's face, and gap a pipe wherever a flange, band, bellows, clamp, or valve wraps it.
+
+Parts meet flush, tangent, or rim-on-surface, never sunk in. A flange's back face lands on its port, a branch leaves from a ball tee, and every end finishes on a flange, coupling, connector shell, or terminal dot — even in the apart pose.
+
+<Warning>
+On the first Raptor, the owner zoomed in and found cables and lines passing through the main ducts and through each other, "which makes no sense." At 1× it looked fine. The geometry audit (`node build.mjs --audit`) proves clearance at rest, apart, and in every frame.
+</Warning>
+
+### Every crossing is in true depth order
+
+Where two items overlap on screen, the nearer one is drawn on top — proved by `A.settle` and the audit, not tuned by eye. The first Raptor had 323 depth-order problems with hand-set keys; measured keys took that to zero.
+
+### Curved surfaces shade smoothly
+
+Mark curved knots smooth (`[s, r, 1]`) and `lathe` shades them from one monotone curve that also draws the outline. Give any curved body larger than a fitting an analytic profile with `smooth: { slope }`. Cut long bodies with `G.bandsOf`, and use `G.sphereOf` for balls. Tone bands taper to nothing instead of ending on a straight cut.
+
+A flat-facet tone per row is only right on a cylinder. The Raptor's bell was shaded as a staircase of flat tone blocks before smooth shading was applied; the reviewer called it broken.
+
+### Textures end on real edges or fade
+
+Ribs, bolt circles, rule lines, seams, and grooves never stop in the middle of a surface:
+
+- `ribsOf` and `dotsOf` take `fade` — draw faded ribs with `fadedSvg`
+- A rib row ends on its seams: `ribsOf(…, { seams: true })`
+- A seam or weld on a box wraps its corners: `k.sideSeam`, passed as `inner`
+- Ticks hang from a ruler strip's edge, not float on a bare plate
+- A single line that must stop ramps out with `fadeLineSvg`
+- A texture on a pipe (braid, corrugation, wrap) follows its cross-section through every chunk joint: `tubePieces(…, { rings })` — never a dashed stroke down the centreline
+
+Only rule lines that stand for printed text, a needle's tail, and a pointer's tip may stop on a bare face — mark those `free` so the line check knows it was intentional.
+
+### Volume
+
+Give things real thickness, make them stand on other things, and put a soft halo under the base and under anything lifted.
+
+```js
+// Halo under the base plate
+`<path class="iso-halo" d="${k.haloOf(PLATE, -PLATE_H - FOOT_H, PLATE_H, P)}"/>`
+// Halo under a lifted carriage
+`<path class="iso-halo" d="${k.haloOf(k.insetPlan(CARRIAGE, 3), CARRIAGE_Z, 0.1, P)}" style="filter:blur(4px)"/>`
+```
+
+### Composition
+
+Centre the figure and let it fill about 55–65% of the card. Keep a consistent scale across a set of figures, and make sure it still reads at 390 px wide.
+
+Default camera: azimuth 45°, elevation 30°. Rotate the azimuth (35–60°) so the face that carries the mechanism points at the viewer. Raise elevation to look into something open (the ripple tank uses 44°). Fit with `fitProjection`. Typical viewboxes are 600 × 340–380.
+
+## Anti-patterns to avoid
+
+These are the patterns that got figures rejected in practice. Reading this list before designing saves rebuilding.
+
+<AccordionGroup>
+  <Accordion title="Abstract stacks">
+    Floating plates, slabs, or tiles standing for "layers" are too abstract to read as anything. If you need layers, make them drawers, trays in a rack, plates on guide pillars, or cards in a holder.
+  </Accordion>
+  <Accordion title="One big plain slab">
+    A large surface with a few lines is too flat and bland. Break it into a base, a carriage, and parts. Add a groove, screws, a ruler, and a label plate.
+  </Accordion>
+  <Accordion title="Blueprint furniture">
+    Leader lines, balloons with numbers, dimension arrows, hatching, dashed hidden edges, and floating labels belong in the legend and caption — not the drawing.
+  </Accordion>
+  <Accordion title="Lines that stop in mid-air">
+    Guide fans, connectors that end short of a part, or a crease that stops before the silhouette corner. Every line must land on something. The line-end check finds these.
+  </Accordion>
+  <Accordion title="Wireframes">
+    See-through boxes where the back edges show. Every part is filled and painted in order.
+  </Accordion>
+  <Accordion title="Colour everywhere">
+    Keep it monochrome unless colour is the subject. One lit accent plus true RGB only for colour channels. A blind-test bench painted its oil saturated orange in an otherwise grey figure — its fallback oil was grey. A fluid is a tint of the figure's own inks.
+  </Accordion>
+  <Accordion title="Text in the drawing">
+    Allow at most one tiny engraved label (`FaceText` on a face). Everything else goes in the card corners, legend, or caption.
+  </Accordion>
+  <Accordion title="Raw pointer jumps">
+    Parts that snap to the cursor. Ease everything — exponential follow or real springs.
+  </Accordion>
+  <Accordion title="Pipes through pipes">
+    On the first Raptor the owner zoomed in and found cables passing through the main ducts. At 1× it looked fine. The geometry audit proves clearance at rest, apart, and in every frame of the explode.
+  </Accordion>
+  <Accordion title="Textures that stop">
+    Rows of bolt dots that stop dead in the middle of a surface, and curved bodies shaded as a staircase of flat tone blocks. The owner's words: "we'd rather fade them out at the end than an instant stop." Shade curved surfaces smoothly, and make textures end on a real edge or fade out.
+  </Accordion>
+  <Accordion title="Shaders that pop or cut off">
+    The first Raptor plume changed colour instantly between phases, "as if cut out", and a glow ended in a straight line at the canvas edge. Every shader term rides an envelope and reaches zero before any bound.
+  </Accordion>
+  <Accordion title="Stand-in shapes">
+    To quiet the audit one builder recorded a 0.45-thick disc at the tip of each of five overlapping rod copies. The audit passed, and the lit rod's outline was notched every 12 units while it moved. Record the true shape of what you draw. The audit's stand-in check fails any item whose recorded shapes cover less than 60% of its drawing.
+  </Accordion>
+  <Accordion title="Dark-theme glows pasted on white">
+    Taking a dark glow and darkening it gave "red ink smoke" on the Raptor's light plume. It also gave flames drawn as outlines and sparks that looked like dirt. On paper, light reads through saturation and a darker physical ground.
+  </Accordion>
+  <Accordion title="Fixing one close-up by eye">
+    Tuning a painter's key or nudging a waypoint until one screenshot looks right breaks another frame or another theme. The Raptor's hand-set keys left 323 depth-order problems. Measure first, then look.
+  </Accordion>
+</AccordionGroup>
+
+## Painter's order
+
+Draw the base first, then everything resting on it. Within a level, sort by `depthOf(centre, P)`, ascending — far before near.
+
+**Split wrapping parts.** For a spring or a frame around a carriage, draw the back half, then the inner part, then the front half. For the test rig: back frame bars → rods with back coil halves → carriage → glass → front coil halves → front bars → dial.
+
+**Moving parts** are drawn at their slot in the order, inside a `<g transform>` that moves them. If a moving part can pass in front of and behind the same neighbour, split the neighbour or bound the motion so the order never changes.
+
+**Dense figures settle their keys from geometry.** Past a few dozen overlapping parts, hand-set biases fight each other. Give every item its true shape and let `kit/audit.mjs` measure which surface is nearer wherever two items overlap — then `orderKeys` raises each key just enough to satisfy every pair.
+
+## Themes
+
+`ISO_CSS` defines tokens on `.iso`, with dark as the default and `.iso[data-theme="light"]` for light. Every fill and stroke reads a token. Light is the theme Anatomy designs for first, shaders included.
+
+<Note>
+Every colour must be a token. A colour typed directly into a figure's CSS or shader is a theme bug waiting to happen. Give it a light value and a dark override. Where a shader needs the same colour, read it from the token.
+</Note>
+
+**Cavities** (the inside of a furnace mouth, a water column, a duct window) are darker for a reason — soot, refractory, depth, shadow. Give the cavity group its own token set that redefines `--anatomy-paper` and the four shade tokens to darker or warmer greys. Keep all the tones so it still has form.

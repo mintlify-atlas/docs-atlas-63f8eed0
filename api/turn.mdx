@@ -1,0 +1,357 @@
+---
+title: "turn.mjs: 3D groups, poses, and orbit audit API"
+sidebarTitle: "turn.mjs"
+description: "Build turning, sliding, hinged and free groups; pack a live layer into a page; and run the orbit audit across a full sweep of angles and poses."
+---
+
+The 3D mode (turning groups) lets parts of a figure move as rigid bodies — a dial that spins, fingers that flex, a piece that breaks off and tumbles. Everything else stays ordinary static kit art. A figure that doesn't opt in is untouched.
+
+<Note>
+  **Status: beta.** Proved on `examples/turning-dial` and one test figure; not yet on a production figure. Turn one subject at a time, keep clutter static, and measure your figure against `references/3d.md` section 15 before adding parts.
+</Note>
+
+```js
+// Build server (Node)
+import { turning, separate, gjk } from "../../kit/turn-build.mjs";
+
+// Runtime (browser, inlined with turnScript())
+import { TURN, TURN_CSS } from "../../kit/turn.mjs";
+
+// Orbit audit
+import * as TA from "../../kit/turn-audit.mjs";
+```
+
+## turning(P, options) → T
+
+```js
+export const T = turning(P, { recorder: R, scale: 1 });
+```
+
+Creates the builder `T`. Pass the kit recorder so every live shape is recorded for the kit audit too.
+
+## Group types
+
+All groups are created with `T.group(name, options)`. Groups nest via `parent`.
+
+<Tabs>
+  <Tab title="turn">
+    ```js
+    const dial = T.group("dial", {
+      turn: { pivot: [cx, cy] },
+    });
+    ```
+    Rotation about the vertical axis through `pivot`. Value in degrees. A vertical round in an upright turn group becomes a `fixed` picture automatically (`fixed: false` stops this).
+  </Tab>
+  <Tab title="slide">
+    ```js
+    const drawer = T.group("drawer", {
+      slide: { direction: [1, 0, 0], travel: 40 },
+    });
+    ```
+    Translation along `direction`, value from 0 to `travel` world units.
+  </Tab>
+  <Tab title="hinge">
+    ```js
+    const finger = T.group("f0.j1", {
+      parent: f0j0,
+      hinge: { point: J1, axis: w, range: [-22, 0] },
+    });
+    ```
+    Rotation about `axis` through `point`, value in degrees within `range`. Chain hinges for fingers and arms.
+  </Tab>
+  <Tab title="free">
+    ```js
+    const pod = T.group("pod", {
+      parent: dial,
+      free: { origin: C },
+    });
+    ```
+    A free rigid body. Value is `{ R: [9] | q: [x,y,z,w] | { axis, angle }, t: [3], world? }` or `null` for rest. Use `controller.detach(name)` to transition to world-space integration.
+  </Tab>
+</Tabs>
+
+## Layers and stack
+
+```js
+const hand = T.layer("hand");
+T.stack(["back", "hand", "front"]);
+```
+
+`T.layer(name)` declares a live SVG layer. `T.stack([...])` sets the full back-to-front order of live and static layer names. Include static layer names (like `"back"` and `"front"`) between the live ones.
+
+## Part constructors
+
+Common options on every constructor: `{ name, group, layer, tone, crease, lit, material, owner, details }`.
+
+| Constructor | Part |
+|---|---|
+| `T.prism({ plan, z, h, steps, bevel })` | An upright kit slab. |
+| `T.prism({ F, polygon, s0, s1, round, steps, bevel })` | A convex polygon in frame `F` extruded along `F.a` from `s0` to `s1`. |
+| `T.round({ F, s0, s1, r, ends, fixed })` | Cylinder or cone frustum; each end `"flat"`, `"dome"` or `"open"`. |
+| `T.lathe({ F, profile, slope, radius })` | A general convex smooth body. Prefer rounds. |
+| `T.ball({ c, r, flats })` | A sphere. `flats: [{ n, d }]` keeps each half-space `n·(p − c) ≤ d` and draws its rim as a cap. Without flats it is a fixed picture. |
+| `T.tube({ route, r, chunk, turn, gaps, breaks, caps, rings, hue, material, bundle, owner, touch })` | Kit `tubePieces` semantics. `hue` is `"red" \| "green" \| "blue"`. |
+| `T.fixed({ svg, anchor, shapes, hull, F })` | Kit markup whose picture never changes under the group's motion, moved by `translate`. |
+| `T.plane({ part, o, u, v, svg, fade, normal })` | Line or text markup in a plane of the part (ticks, numerals, label plates), faded by facing. |
+| `T.billboard({ part, at, normal, svg, fade })` | Screen-aligned markup at a projected point — SVG fallback for a shader glow. `svg` is in viewBox px centred on the projected point; multiply world sizes by `G.scaleOf(P)`. |
+| `T.split(part, { n, d })` | Two parts cut by a plane. Use it to break a genuine painter's-order cycle. |
+
+### Details
+
+Details go in `{ details: { … } }` on any constructor, in the part's frame (`s` along the axis, `x` and `y` in `u` and `v`):
+
+```js
+details: {
+  seams: [s, …],
+  ribs: { s0, s1, count, phase, twist, fade: [0.1, 0.55], seams: true, tone },
+  bolts: [{ s, r, count, phase, size: 0.5, tone: "mid", fade: [0.04, 0.42] }],
+  dots: [{ at: [s, x, y], normal, size, tone }],
+  rings: [{ at: [s, x, y], normal, r, tone }],
+  rules: [{ points: [[s, x, y], …], tone, free }],
+  bevel: 0.4,
+}
+```
+
+Every detail fades with facing. No texture stops at full strength.
+
+### Materials
+
+Pass `material` on any constructor:
+
+| Material | Look |
+|---|---|
+| `gold` | Champagne-gold anodised aluminium: warm pale top, bronze shadows. |
+| `chrome` | Bright polished steel with a non-monotonic reflection band. |
+| `steel` | Satin steel, monotonic and cool. |
+| `gunmetal` | Dark blue-grey metal with light dots. |
+| `rubber` | Black rubber and cable sheath with soft sheen. With `hue`, a tube becomes a coloured sheath. |
+| `brass` | Warm fitting metal. |
+| `copper` | Red-warm fitting metal. |
+
+Static parts use the same families with `<g data-mat="brass">…</g>`. The rules live in `TURN_CSS`.
+
+## T.build
+
+```js
+const out = T.build({
+  statics: R.items,
+  poses,
+  verify: argv.includes("--verify"),
+  strict: true,
+});
+```
+
+Solves every pair, proves every static item's layer, and packs the page data. `poses` is the figure's reachable states — a list or a function returning one, every motion clip sampled. Throws a readable error on any pair with no separating plane or any non-convex part. `strict: false` keeps interlocked pairs.
+
+### Return value
+
+<ResponseField name="svg" type="string">
+  The static layer markup at rest.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Page data (`DATA.turn`) — pass to `TURN.mount` in the browser.
+</ResponseField>
+
+<ResponseField name="css" type="string">
+  `TURN_CSS` plus face-band rules and material styles. Include it once per page.
+</ResponseField>
+
+<ResponseField name="report" type="object">
+  `{ parts, layers, tight, margins, proofs, seconds }` — build statistics.
+</ResponseField>
+
+<ResponseField name="layerSvg(name, { width, height })" type="function">
+  Returns the live SVG element for a named layer, for inserting into the stage markup.
+</ResponseField>
+
+<ResponseField name="verify" type="object">
+  Verification data for `turn-check --order` (pass `verify: true` at build time).
+</ResponseField>
+
+<ResponseField name="planesByName" type="object">
+  The solved separating planes by part-pair name.
+</ResponseField>
+
+## TURN runtime
+
+The runtime is inlined with `turnScript()`. It does not run its own `requestAnimationFrame` — the figure owns the loop.
+
+### TURN.mount
+
+```js
+const controller = TURN.mount(stage, data, {
+  onHold: () => (touring = false),
+  onFrame: (ctrl) => drawShaders(ctrl),
+  follow: (values) => ({ ...values, "f2.mcp": -22 * (values.lift ?? 0) }),
+});
+```
+
+Binds every live layer in `stage`, renders the rest pose, and installs `window.__isoTurn`. `follow(values)` maps figure values to group values on every `set` — use it to drive coupled groups from one input.
+
+### controller methods
+
+| Method | What it does |
+|---|---|
+| `controller.set(values \| θ, { detail })` | Sets group values (a number sets the first turn group), renders synchronously, returns stats. `detail` (0–1) scales faded lines, ribs and dots. |
+| `controller.render()` | Re-renders the current pose without changing values. |
+| `controller.angleAt(clientX, clientY, z, group)` | The pointer as an unwrapped angle about the group's pivot on the plane at height `z`. Use for drag-to-spin. |
+| `controller.values` | The current group values object. |
+| `controller.pose(name)` | The group's world pose `{ R, t }`. |
+| `controller.detach(name)` | The `{ world: true, R, t }` value that continues a free group's current pose in the world frame — no jump on detach. |
+| `controller.anchor(group, restPoint, restDir?)` | Where a rest-world point (and direction) of a group is now: `{ world, screen, direction }`. Use for shader spark sources, flame roots, LED positions. |
+| `controller.cover(names, options)` | Compute cover masks for a shader. See `TURN.cover`. |
+| `controller.order(layer)` | Current paint order for a layer. |
+| `controller.orderIndex(layer)` | The order index. |
+| `controller.events()` | Order-change events. |
+| `controller.stats()` | `{ ms, writes, moved, forced, refined, unseparated, emitted }`. |
+| `controller.destroy()` | Removes event listeners and cleans up. Return it from a React effect's cleanup. |
+
+### TURN.cover
+
+```js
+const coverData = TURN.cover(controller, names, {
+  polygons: 6,
+  edges: 10,
+  pad: 0.3,
+  layers,
+});
+// { uCoverEdge, uCoverCount, dropped, parts }
+```
+
+Computes cover masks for `coverOf(vb, soft)` in the fragment. Pass `coverData` to `layer.draw(...)`. The masks are convex silhouettes pushed out `pad` vb, so ink stops at the occluder's stroke.
+
+<Warning>
+  `GLSL_TURN` uses 70 uniform vectors. Read `MAX_FRAGMENT_UNIFORM_VECTORS` and keep the SVG fallback below 128.
+</Warning>
+
+### TURN.poseUniforms
+
+```js
+const uniforms = TURN.poseUniforms(controller, "dial", "uDial");
+// { uDialX, uDialY, uDialZ, uDialT }
+```
+
+Four `vec3` for `GLSL_TURN` or `glslPose`. Pass to `layer.draw(uniforms)`.
+
+### Other TURN members
+
+| Member | What it does |
+|---|---|
+| `TURN.rotation(axis, degrees)` | A 3×3 rotation matrix as a `[9]` array. |
+| `TURN.quat(q)` | A 3×3 rotation from a quaternion `[x, y, z, w]`. |
+| `TURN.compose(A, B)` | Compose two 3×3 rotations. |
+| `TURN.anchor(scene, cams, group, point, dir)` | Anchor outside a controller. |
+| `TURN.floorOf(scene, group, R)` | The lowest z of a group's parts under rotation `R` — to set a piece down flush. |
+| `TURN.materials` | Array of material names. |
+| `TURN.materialCss()` | The material CSS alone (already in `TURN_CSS`). |
+| `TURN_CSS` | All styles — face-band rules, materials, hue tubes, `.iso-turn` stacking. Include once. |
+
+## orbitOrExit
+
+```js
+TA.orbitOrExit(T, R, P, {
+  flag: "--audit",
+  argv: process.argv,
+  sweep: { at: (x) => follow({ dial: x }), from: 0, to: 360, frame: 0.3 },
+  clips: [{ name: "tap", at: (t) => follow({ dial: 40 + 12 * t, lift: tapAt(t) }), from: 0, to: 4, frame: 1 / 60 }],
+  crowd: [],
+  quick: false,
+  only: ["order", "routes"],
+});
+```
+
+Runs the full orbit audit when the flag is present. Prints one line per check and ends either `turn audit passed`, `turn audit partial`, or `turn audit quick`. Sets `process.exitCode = 1` on any failure.
+
+### Options
+
+<ParamField path="sweep" type="object">
+  The turn sweep: `{ at(x), from, to, frame }`. Samples the turn across its full range.
+</ParamField>
+
+<ParamField path="clips" type="array">
+  Motion clips: `[{ name, at(t), from, to, frame }]`. Gestures, break-apart motions — every frame at 60 fps.
+</ParamField>
+
+<ParamField path="poses" type="array">
+  Extra static states to check.
+</ParamField>
+
+<ParamField path="crowd" type="array">
+  `[[route, part], …]` pairs exempt from `crowding`, after you have looked at each one.
+</ParamField>
+
+<ParamField path="cover" type="array">
+  Items whose drawing reaches past their body — exempt from `coverage`.
+</ParamField>
+
+<ParamField path="fittings" type="array">
+  `[[route, from, to]]` stretches inside a fitting, exempt from the `endon` bend check.
+</ParamField>
+
+<ParamField path="quick" type="boolean" default="false">
+  ≈ 10× fewer states — for iteration. A `quick` run ends `turn audit quick: no problems in what ran (quick run, undersampled: the full run is the proof)`.
+</ParamField>
+
+<ParamField path="only" type="string[]">
+  Run only these check lines: `"order"`, `"rigid"`, `"swept"`, `"posed"`, `"routes"`, `"coverage"`, `"continuity"`, `"depth"`. Lines left out print `skipped`. An unknown name throws.
+</ParamField>
+
+### Audit checks and what fails them
+
+| Check line | Fails on | Fix |
+|---|---|---|
+| `separation` | A same-group pair with no separating plane (margin < −0.08) | Split the part, add a flat, or make the contact flush |
+| `unseparated` | A cross-group pair interpenetrating; a framed plane a state breaks | Fix the contact or add the motion to `poses()` |
+| `cycles` | A painter's-order cycle among overlapping parts in some state | `T.split` on the suggested plane |
+| `forced` | The runtime had to force a pick | As cycles |
+| `swaps` | Two overlapping parts swap order while overlapping more than 0.25 px² | Inspect with `drive.mjs` orbit at the reported angle; fix the plane |
+| `layers` | A static item on the wrong side of a live part | Move it or split at the right z |
+| `rigid` | Kit clearances, terminals, supports or solid clearances at rest | Fix contacts, mount the child knuckle disc, fix route start points |
+
+### Iterating the orbit audit
+
+<Steps>
+  <Step title="Iterate with --quick --only">
+    ```bash
+    node build.mjs --audit --quick --only=order,routes
+    ```
+    Fast enough for tight iteration — about 85 seconds on a 28-part figure.
+  </Step>
+  <Step title="Run --quick alone before the final pass">
+    ```bash
+    node build.mjs --audit --quick
+    ```
+    Undersamples, but catches most problems. Not the proof.
+  </Step>
+  <Step title="Run the full audit in the background">
+    ```bash
+    node build.mjs --audit > audit.txt 2>&1 &
+    ```
+    Budget about 30–40 seconds per part. Only `turn audit passed` from a full run counts.
+  </Step>
+</Steps>
+
+### Other exports from turn-audit.mjs
+
+| Export | What it does |
+|---|---|
+| `orbit(T, R, P, options)` | The orbit checks, returning a result object. |
+| `orbitReport(result)` | Formats the result as a readable string. |
+| `orbitFailures(result)` | Counts failing checks. `result.skipped` lists lines left out by `only`. `result.quick` is set for a quick run. |
+| `posed(shape, pose)` | A recorded shape moved by a group pose — for custom probes. |
+| `eventsOf(T, layer)` | A layer's edge-on angles — angles where the paint order changes. |
+
+### separate and gjk
+
+From `turn-build.mjs`:
+
+```js
+const result = separate(A, B, hints);
+// { n, d, margin }
+
+const result = gjk(A, B, warm);
+// { n, d, margin }
+```
+
+Both operate on point sets and return the separating plane normal `n`, distance `d`, and `margin` (positive means separated). `separate` is the build's plane solver; `gjk` is the runtime distance query, warm-started from the previous frame.

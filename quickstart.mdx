@@ -1,47 +1,171 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get started with Anatomy in under a minute"
+sidebarTitle: "Quickstart"
+description: "Install Anatomy with one npx command, invoke it in Claude Code, and get a working interactive isometric SVG figure in your browser."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+Anatomy installs through the Agent Skills CLI in a single command. Once installed, you invoke it with `/anatomy` in Claude Code, describe what you want explained, and the agent writes a build script and an HTML page you can open immediately. This page walks you through the whole path from install to a running figure.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+## Step 1: Install the skill
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Run the install command">
+    Open your terminal and run:
 
-    ```bash
-    npm install your-package
+    ```sh
+    npx skills add wheresryan22/anatomy -g -a claude-code
     ```
+
+    The `-g` flag installs the skill globally for your user account (at `~/.claude/skills/anatomy`). The `-a claude-code` flag targets Claude Code. For OpenCode or Codex, swap the agent flag:
+
+    ```sh
+    # OpenCode
+    npx skills add wheresryan22/anatomy -g -a opencode
+
+    # Codex
+    npx skills add wheresryan22/anatomy -g -a codex
+    ```
+
+    <Note>
+      The CLI copies the whole repository, examples included — about 10 MB. You need a recent Node.js (20.10 or later). If the skill folder did not exist when your current Claude Code session started, run `/reload-skills` once to pick it up.
+    </Note>
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
 
-    ```bash
-    your-cli init
-    ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+  <Step title="Verify Claude Code sees the skill">
+    In a Claude Code session, type `/` and look for `anatomy` in the skill list. If you just created the `skills` folder for the first time, run:
 
-    ```bash
-    your-cli start
+    ```text
+    /reload-skills
     ```
+
+    After that, `/anatomy` is available in every new and existing session.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Step 2: Invoke the skill
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+<Steps>
+  <Step title="Type a prompt">
+    In Claude Code, start a message with `/anatomy` and describe what you want explained:
+
+    ```text
+    /anatomy explain how a token bucket rate limiter works, interactive
+    ```
+
+    That is the whole invocation. No API keys, no configuration file, and nothing to `npm install` — the kit uses only Node's built-in modules.
+  </Step>
+
+  <Step title="What the agent does">
+    The agent works through a fixed workflow before writing any geometry:
+
+    1. Collects the real numbers for your concept (rates, sizes, thresholds, counts)
+    2. Invents a physical object whose mechanism maps onto the concept
+    3. Writes a parts list (40 or more named parts, grouped by function)
+    4. Builds the geometry with the kit, painting parts back to front
+    5. Frames the figure in a card with a title, hint, and live readout
+    6. Adds eased interactive motion driven by a model
+    7. Runs headless Chrome checks and reads every screenshot it takes
+
+    Depending on the complexity you request, a figure takes 30 minutes to a few hours. The agent tells you which size it is before it starts.
+  </Step>
+
+  <Step title="What you receive">
+    The agent writes two files next to each other:
+
+    - **`build.mjs`** — a Node script that assembles and writes the page
+    - **`page.html`** (or a named variant like `page-light.html`) — the finished standalone figure
+
+    For React output you receive geometry modules, a server component, and a client component instead. See the [React integration guide](/advanced/react-nextjs) for that path.
+  </Step>
+</Steps>
+
+## Step 3: Open the figure
+
+<Steps>
+  <Step title="Run the build script">
+    The agent typically runs this for you, but you can re-run it at any time:
+
+    ```sh
+    node build.mjs
+    ```
+
+    This writes `page.html` next to the script. Open it in any browser.
+  </Step>
+
+  <Step title="Try the light theme">
+    Every figure supports both dark and light themes. Add `--light` to build the light version:
+
+    ```sh
+    node build.mjs --light
+    ```
+
+    This writes `page-light.html`. The skill designs the light theme first, so shaders and colours are tuned for both.
+  </Step>
+
+  <Step title="Open in your browser">
+    Open `page.html` directly — there is no dev server required:
+
+    ```sh
+    # macOS
+    open page.html
+
+    # Linux
+    xdg-open page.html
+
+    # Windows
+    start page.html
+    ```
+
+    Hover over the figure to see the interactive motion. The live readout at the bottom right updates as parts move. Press `Tab` to cycle through interactive states from the keyboard.
+  </Step>
+</Steps>
+
+## More prompt examples
+
+Three habits get the best figures: name the idea (not the drawing), give real numbers, and say where the figure will live.
+
+<Tabs>
+  <Tab title="Docs figure">
+    ```text
+    /anatomy a figure for our Next.js docs on database connection pooling: a pool of 10 connections, requests borrow one and give it back, and when all 10 are busy new requests wait in a queue. A React component plus a static HTML preview, dark theme.
+    ```
+  </Tab>
+  <Tab title="Landing page SVG">
+    ```text
+    /anatomy an isometric SVG explaining how a CDN edge cache works, cache hit vs miss, TTL of 60 s, for a dark landing page. Just the SVG file and a PNG preview.
+    ```
+  </Tab>
+  <Tab title="WebGL flame">
+    ```text
+    /anatomy a Bunsen burner on a lab bench: opening the air collar turns the lazy yellow flame into a roaring blue cone. WebGL for the flame, one HTML file, dark theme.
+    ```
+  </Tab>
+  <Tab title="Exploded machine">
+    ```text
+    /anatomy a heat-exchanger espresso machine with the side panel off: boiler, heat-exchanger tube, group head, pump, steam wand and gauge. Show the water flowing when you pull a shot. Standalone HTML, light theme.
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  You do not have to name the skill. Claude Code also loads Anatomy when you ask for an isometric illustration, an explanatory figure for docs, a "Linear-style" or "premium" technical drawing, or an interactive explainer — even if you never say "isometric".
 </Tip>
+
+More prompts are available in the skill's [`evals/evals.json`](https://github.com/wheresryan22/anatomy/blob/main/evals/evals.json), which contains the test prompts used to verify the skill's output quality.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    All install methods: skills CLI, git clone, and ZIP download for Claude Code, OpenCode, and Codex.
+  </Card>
+  <Card title="Examples" icon="shapes" href="/examples">
+    Eight complete figures you can build and study — from a 300-line dial gauge to a Raptor 2 engine with WebGL shaders.
+  </Card>
+  <Card title="React integration" icon="react" href="/advanced/react-nextjs">
+    Use Anatomy figures in a Next.js or React app with the server/client component split.
+  </Card>
+  <Card title="Output types" icon="layer-group" href="/introduction#the-three-output-types">
+    SVG, SVG + WebGL shaders, and the 3D beta mode explained.
+  </Card>
+</CardGroup>

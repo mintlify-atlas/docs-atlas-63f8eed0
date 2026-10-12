@@ -1,0 +1,139 @@
+---
+title: "Ripple Tank: dual WebGL layers in an isometric figure"
+sidebarTitle: "Ripple Tank"
+description: "A school ripple tank on tall legs with two WebGL layers — lamp caustics below, water reflections above — driven by a pure dispersion and optics model."
+---
+
+The ripple-tank example is a school ripple tank on four tall legs over a paper screen, drawn from a 44° elevation camera so you look down into the open water bath. Two dippers on a vibrating bar produce interfering waves; a lamp on an arm above projects their caustics onto the paper screen below. Everything the figure shows — wavelength, wave speed, group velocity, nodal line positions, caustic focus, projected pattern scale — comes from a pure physics model in `model.mjs` that has no drawing code at all.
+
+## What it demonstrates
+
+- A 44° elevation camera (higher than the default 30°, to look into something open)
+- Two independent WebGL layers registered to different isometric planes: one for lamp light, shadows and caustics on the paper screen; one for reflections and the water surface
+- A pure model (`model.mjs`) driving both the readout and the shader uniforms, with no coupling between model and drawing code
+- A frequency-history texture that lets a frequency change travel out from the dippers at the group velocity instead of updating all at once
+- The dispersion relation for capillary-gravity waves and a binary-search wavenumber solver
+- Blending: the paper layer is premultiplied with `mix-blend-mode: screen`; the water layer (which must also darken, for depth and reflections) stays normal-blended
+
+## The pure model: `model.mjs`
+
+`model.mjs` exports only pure functions and constants. It has no imports from the kit and no side effects. The shader and the readout both call into it; neither knows about the other.
+
+```js
+export const WATER = {
+  depth: 0.006, gravity: 9.81, tension: 0.0728,
+  density: 998, index: 1.333, viscosity: 1.0e-6,
+};
+```
+
+The dispersion relation for capillary-gravity waves in finite depth:
+
+```js
+export function omegaOf(k) {
+  const { depth, gravity, tension, density } = WATER;
+  return Math.sqrt(
+    (gravity * k + (tension / density) * k * k * k) * Math.tanh(k * depth),
+  );
+}
+```
+
+The wavenumber is found by binary search, since `ω(k)` has no closed-form inverse:
+
+```js
+export function wavenumberOf(frequency) {
+  const omega = 2 * Math.PI * frequency;
+  let low = 1, high = 20000;
+  for (let step = 0; step < 60; step++) {
+    const mid = (low + high) / 2;
+    if (omegaOf(mid) < omega) low = mid; else high = mid;
+  }
+  return (low + high) / 2;
+}
+```
+
+`waveOf(frequency)` returns the full wave state — wavenumber `k`, wavelength `lambda`, phase speed, group velocity, viscous damping rate and spatial decay — in one call:
+
+```js
+export function waveOf(frequency) {
+  const k = wavenumberOf(frequency);
+  const lambda = (2 * Math.PI) / k;
+  const speed = (2 * Math.PI * frequency) / k;
+  const h = 1e-3 * k;
+  const group = (omegaOf(k + h) - omegaOf(k - h)) / (2 * h);
+  const { viscosity, depth } = WATER;
+  const omega = 2 * Math.PI * frequency;
+  const damping = 2 * viscosity * k * k
+    + (k * Math.sqrt((viscosity * omega) / 2)) / Math.sinh(2 * k * depth);
+  return { frequency, k, lambda, speed, group, damping, decay: damping / group };
+}
+```
+
+The readout string is assembled from a `state` object that bundles both wave and optics quantities:
+
+```js
+export const readoutOf = (state) =>
+  `f ${state.frequency.toFixed(1)} Hz · λ ${(state.lambdaMm / 10).toFixed(2)} cm`
+  + ` · d ${(state.spacing / 10).toFixed(1)} cm · ${state.nodal} nodal lines`;
+```
+
+## Optics: caustic focus and projected scale
+
+The caustic model accounts for refraction at the water surface and through the glass base, and magnification from the lamp position above to the paper screen below:
+
+```js
+export const magnificationOf = (zLamp, zPaper, zWater) =>
+  (zLamp - zPaper) / (zLamp - zWater);
+
+export function causticOf(zLamp, zPaper, zWater, zFloor = zWater, zBed = zFloor) {
+  const n = WATER.index;
+  const bend = (zWater - zFloor) * (1 - 1 / n)
+    + ((zFloor - zBed) * (n - 1)) / GLASS
+    + (zBed - zPaper) * (n - 1);
+  return bend / magnificationOf(zLamp, zPaper, zWater);
+}
+```
+
+## Frequency history texture
+
+When the user changes the frequency, the new wavelength does not appear all at once. Instead, the shader reads from a ring-buffer history texture: the wave at radius `r` from a dipper reads the frequency that was set `r / groupVelocity` seconds ago. A frequency change therefore travels out from the dippers at the group velocity — as it does in the real tank.
+
+## The two WebGL layers
+
+| Layer | What it draws | Plane it registers to | Blending |
+|---|---|---|---|
+| Paper | Lamp light, shadows, caustic pattern projected onto the screen | Floor plane (the paper) | Premultiplied, `screen` |
+| Water | Wave surface reflections, depth tint, glass base | Water surface plane | Normal alpha |
+
+Both layers use `GLSL_ISO` from `kit/gl.mjs` for the camera, so shader coordinates match SVG coordinates exactly. Caustic and reflection positions are computed in world units and mapped with `uK` (the kit's scale factor).
+
+<Note>
+The paper layer uses `mix-blend-mode: screen` because it only adds light. The water layer must also darken (to show depth and shadow), so it stays with normal blending — as explained in the WebGL craft rules in `references/webgl.md`.
+</Note>
+
+## Camera: 44° elevation
+
+The default Anatomy camera uses 30° elevation. The ripple tank raises it to 44° so the viewer can see into the open water bath and watch the dippers:
+
+```js
+const P = k.fitProjection(points, WIDTH, HEIGHT, {
+  pad: 30,
+  azimuth: 45,
+  elevation: 44,
+});
+```
+
+Use a higher elevation any time the figure contains a vessel, tank or basin the reader needs to see into from above.
+
+## Build command
+
+```bash
+node examples/ripple-tank/build.mjs
+```
+
+Add `--light` for the light theme:
+
+```bash
+node examples/ripple-tank/build.mjs --light
+```
+
+The built pages (`ripple-tank.html` and `ripple-tank-light.html`) are committed and can be opened directly in a browser.

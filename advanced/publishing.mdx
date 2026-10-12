@@ -1,0 +1,140 @@
+---
+title: "Publish an Anatomy figure to the community gallery"
+sidebarTitle: "Publishing"
+description: "Share a finished Anatomy figure with the community gallery by asking the agent to publish it, or by running publish.mjs yourself with a GitHub account."
+---
+
+The community gallery lives at `wheresryan22/anatomy-community`. People share plain HTML figures there — a build script that writes standalone pages next to itself, as the skill's examples do, in any theme. The gallery builds every submitted page in a locked sandbox. Submitting a figure is entirely optional, and the agent will never send anything without your explicit yes.
+
+<Note>
+  React and Next.js figures cannot be submitted to the gallery. It accepts only plain HTML figures produced by a standalone build script.
+</Note>
+
+## Asking the agent to publish
+
+Tell the agent in plain language: **"publish this figure to the Anatomy community gallery."** The agent will check that the figure is finished, ask you for the details only you can provide, show you a plan, and wait for your confirmation before sending anything.
+
+Before asking to publish, make sure:
+
+- Pages are built and up to date
+- The line check passes (`node scripts/lines.mjs` prints `line ends: 0`)
+- `--audit` passes if the figure has pipes, cables, or round parts
+- With reduced motion on, the figure holds one still pose
+
+## What the agent asks you for
+
+<Steps>
+  <Step title="GitHub username">
+    Your GitHub username becomes the `author` in the gallery path. The agent can check `gh api user --jq .login` to see who the GitHub CLI is signed in as.
+  </Step>
+  <Step title="Title and ID">
+    A title (at most 80 characters) and a short kebab-case ID, for example `ripple-tank` or `raptor-engine`.
+  </Step>
+  <Step title="License">
+    MIT (the default) or CC-BY-4.0.
+  </Step>
+  <Step title="Confirmation">
+    Confirmation that it is your own work and you are happy to share it.
+  </Step>
+</Steps>
+
+## The plan it shows before sending
+
+Before doing anything, the agent runs `publish.mjs` with `--dry-run` and reads the plan back to you. The plan names the fork (if any), the branch, the folder it adds, and where the pull request goes.
+
+```sh
+node <skill>/scripts/publish.mjs <figure folder> \
+  --into <gallery clone> \
+  --id ripple-tank \
+  --title "Ripple tank: wave interference in an isometric trough" \
+  --author your-github-username \
+  --prompt "build a ripple tank showing two-source interference" \
+  --agent "Claude Code" \
+  --model "claude-opus-5-5" \
+  --minutes 45 \
+  --tokens 1.2M \
+  --license MIT \
+  --submit \
+  --dry-run
+```
+
+<Tip>
+  In Claude Code, `--minutes` and `--tokens` are read from the session log automatically — from the request that made the figure to the publish request, with idle gaps over 10 minutes excluded and cache reads not counted. In other agents, pass them if you can see your session's usage; otherwise leave them out rather than guess.
+</Tip>
+
+## Running publish.mjs yourself
+
+If you prefer to run the script directly:
+
+```sh
+# 1. Get a local clone of the gallery (only main branch — previews is large)
+gh repo clone wheresryan22/anatomy-community -- --single-branch
+
+# 2. Dry run — shows the plan without doing anything
+node scripts/publish.mjs examples/ripple-tank \
+  --into ~/anatomy-community \
+  --id ripple-tank \
+  --title "Ripple tank" \
+  --author your-github-username \
+  --prompt "..." \
+  --agent "Claude Code" --model "claude-opus-5-5" \
+  --submit --dry-run
+
+# 3. After reviewing the plan, send it
+node scripts/publish.mjs examples/ripple-tank \
+  --into ~/anatomy-community \
+  --id ripple-tank \
+  --title "Ripple tank" \
+  --author your-github-username \
+  --prompt "..." \
+  --agent "Claude Code" --model "claude-opus-5-5" \
+  --submit --yes
+```
+
+The script copies only the figure's source into `figures/<author>/<id>/src/`, points its kit imports at the clone's `.skill/` link, records the kit fingerprint, checks the build, saves a preview screenshot, then commits, pushes, and opens the pull request. It prints the PR link when done.
+
+### Flags
+
+| Flag | What it does |
+|------|--------------|
+| `--submit` | Prepares and sends the pull request. Without it, the script stops after preparing the folder and prints the git and `gh` commands for you to run manually. |
+| `--dry-run` | Shows the plan without doing anything. |
+| `--yes` | Confirms the submission (replace `--dry-run` with this when ready). |
+| `--minutes N` | Session minutes to record (auto-detected in Claude Code). |
+| `--tokens N` | Tokens spent, e.g. `1.2M` (auto-detected in Claude Code). |
+| `--no-session` | Omit session stats entirely. |
+| `--pages a.html,b.html` | Specify which pages are the figure, if the script can't tell. |
+| `--force` | Update an existing submission (updates the same pull request). |
+| `--tags a,b` | Subject tags for the gallery index. |
+| `--audit` | Run `--audit` as part of the submit check. |
+
+## Without a terminal: the Submit a figure form
+
+If you don't have a terminal, you can submit through the gallery's **Submit a figure** GitHub Issue form. Paste a link to a GitHub Gist that holds the figure's source files. The gallery team will review and process it.
+
+## What gets sent
+
+Only the figure's source files are sent — nothing built. Specifically:
+
+- Everything under `figures/<author>/<id>/src/` (your build script and source files)
+- The kit fingerprint (which version of the kit was used)
+- A preview screenshot taken from the built page
+
+The gallery builds pages itself, in a locked sandbox. Committed built pages are rejected.
+
+## What the gallery rejects
+
+<Warning>
+  Write figures this way from the start if you plan to share them. Retrofitting these constraints into a finished figure is painful.
+</Warning>
+
+The gallery rejects any figure that:
+
+- Makes network calls or references outside addresses
+- Uses `eval` or `new Function`
+- Uses frames, cookies, or reaches the page around the figure
+- Has build imports other than the skill, its own files, and `node:fs`, `node:path`, `node:url`, `node:crypto`, or `node:process`
+- Reads environment variables
+- Contains files other than source text under `src/`, or committed built pages
+- Writes anything but its pages during the build, or differs between two runs
+- Keeps moving with reduced motion on

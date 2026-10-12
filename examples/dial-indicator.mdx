@@ -1,0 +1,105 @@
+---
+title: "Dial Indicator: Anatomy's smallest complete example"
+sidebarTitle: "Dial Indicator"
+description: "A dial gauge on a stand with a sliding carriage of gauge blocks — about 300 lines, no WebGL, no audit. The best starting template for a new figure."
+---
+
+The dial-indicator example is the smallest complete figure Anatomy ships. It is a dial gauge on a magnetic-base stand over a surface plate, with three gauge blocks on a sliding carriage. Hover to slide the carriage; the plunger rides up or down onto whichever block is under it, and the needle reads the block's height. At about 300 lines of source with no WebGL layer and no geometry audit, it is the right example to open before starting any new figure.
+
+## What it demonstrates
+
+- Basic kit usage: `slabOf`, `cylinder`, `knurl`, `planOutline`, `topTicks`, `radialTicks`, `lineOnTop`
+- A carriage that moves along a rail with `translateAlong`
+- A needle animated in the live script from the same `needleAt` function used at build time
+- Exponential follow for the carriage and a real spring (`stiffness: 420`, `damping: 26`) for the plunger
+- An idle tour that loops through the three stops when no pointer is present
+- Accessibility: `role="slider"`, `aria-valuemin/max/now/valuetext`, keyboard arrows and Home/End
+
+## Parts breakdown
+
+| Group | Parts |
+|---|---|
+| **Base** | Surface plate with four rubber feet, inset groove, ruler strip with minor and major ticks, corner screws |
+| **Fixture** | Magnetic base block, knurled knob, vertical post with clamp, horizontal arm |
+| **Carriage rails** | Two horizontal rails with end stops, four screws |
+| **Carriage** | Sliding block with handle knob, three gauge blocks (18, 14 and 10 tall) |
+| **Dial gauge** | Plunger stem with tip, body cylinder with knurl ring, back bracket arm, dial face with radial ticks and `0.01` label, lit needle |
+
+The lit needle is the one `lit` accent in the figure. Everything else is `lo`, `mid` or `hi` according to the tone hierarchy: base and feet are `lo`, structure is `mid`, the gauge blocks are `hi`.
+
+## Build command
+
+```bash
+node examples/dial-indicator/build.mjs
+```
+
+Add `--light` for the light theme:
+
+```bash
+node examples/dial-indicator/build.mjs --light
+```
+
+Both built pages are committed to the repository. Open `examples/dial-indicator/dial-indicator.html` (or `dial-indicator-light.html`) directly in a browser.
+
+## Key code patterns
+
+The build script imports the kit from `kit/iso-kit.mjs` and the inline helper from `scripts/inline-kit.mjs`. All world coordinates are constants at the top; nothing is computed inline.
+
+```js
+import * as k from "../../kit/iso-kit.mjs";
+import { kitScript } from "../../scripts/inline-kit.mjs";
+
+const P = k.fitProjection(
+  [...k.boxCorners(PLATE, -PLATE_H - FOOT_H, 0),
+   [POST[0], POST[1], POST_TOP + 2],
+   [DIAL[0] + DIAL_R, 0, DIAL_TOP]],
+  WIDTH, HEIGHT,
+  { pad: 30, azimuth: 42 },
+);
+```
+
+`fitProjection` is called once with the bounding corners of the whole scene. Every subsequent `k.iso(point, P)` call uses the same projection.
+
+The needle path is defined as a plain function so it can be called identically at build time (to set the initial SVG path) and at runtime (inlined into the live script as a string):
+
+```js
+const needleAt = (turn) => {
+  const angle = turn * Math.PI * 2;
+  const [x, y] = DIAL;
+  return k.lineOnTop(
+    [x - Math.sin(angle) * 3.4, y + Math.cos(angle) * 3.4],
+    [x + Math.sin(angle) * (DIAL_R - 4), y - Math.cos(angle) * (DIAL_R - 4)],
+    DIAL_TOP + 0.2,
+    P,
+  );
+};
+```
+
+The plunger uses a real spring in the live script. The spring state (`tip.at`, `tip.rate`) is updated four times per frame with a fixed sub-step:
+
+```js
+const stiff = 420, drag = calm ? 2 * Math.sqrt(420) : 26;
+for (let i = 0; i < 4; i++) {
+  tip.rate += ((want - tip.at) * stiff - tip.rate * drag) * dt / 4;
+  tip.at   += tip.rate * dt / 4;
+}
+```
+
+The carriage uses exponential follow: `x = x + (target − x) × (1 − exp(−dt / 0.28))`.
+
+The page is assembled with `k.figureSvg`, wrapped with `k.plateHtml` (which adds the `Fig 1` corner, title, hint and readout), and written with `k.pageHtml`:
+
+```js
+writeFileSync(
+  join(HERE, theme === "light" ? "dial-indicator-light.html" : "dial-indicator.html"),
+  k.pageHtml({ title: "Dial indicator", theme, body, script: kitScript() + live }),
+);
+```
+
+## Using it as a template
+
+The dial-indicator build script is short enough to read in one sitting and covers every pattern a Figure-size figure needs: one camera, geometry functions called top to bottom, moving parts with `translateAlong`, a live script that touches only `setAttribute` and `textContent`, and an idle tour that resumes after a pointer leaves. Copy `build.mjs` into a new folder, delete the geometry functions one by one, and replace them with your own parts. The kit is imported from `../../kit/iso-kit.mjs` relative to the examples folder; adjust the path if you put your figure elsewhere.
+
+<Tip>
+The three gauge blocks (`BLOCKS = [18, 14, 10]`) and the three stop positions (`STOPS`) are computed from constants at the top of the file. Change the numbers and both the geometry and the live script update together — the model and the drawing are the same source.
+</Tip>

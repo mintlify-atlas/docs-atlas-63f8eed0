@@ -1,0 +1,118 @@
+---
+title: "Anatomy: Isometric Machine Figures for AI Agents"
+sidebarTitle: "Introduction"
+description: "An agent skill for Claude Code, OpenCode, and Codex that explains technical ideas by building them as crafted, interactive isometric SVG machine figures."
+---
+
+Anatomy is an agent skill that explains a technical idea by building it as a real, working physical object. You describe what you want explained — a token bucket rate limiter, a database connection pool, a CDN cache — and the agent invents a precise machine whose mechanism *is* the concept, renders it as a dense isometric SVG figure with dozens of carefully shaded parts, and delivers a standalone HTML page (or React components) that you own and can ship.
+
+## The philosophy: the object is the explanation
+
+Anatomy's central rule is that the object *is* the explanation. Rather than drawing boxes, arrows, and labels, the skill invents a real, well-made physical thing whose working maps one-to-one onto the concept you want to communicate.
+
+Earlier figures illustrate what this means in practice:
+
+| Concept | Object the skill invented |
+|---|---|
+| One shared GPU context serving many canvases | A gantry plotter — one print head visiting 16 wells |
+| A cache key that skips work when nothing changed | A pin-tumbler lock — when every pin matches, the plug turns and nothing is redrawn |
+| Seven render targets with different bytes per texel | A chest of seven drawers, each as deep as its bytes |
+| A separable blur (49 × 49 taps vs 49 + 49) | A bed-of-nails stamp beside two combs on rails |
+| A spring that presses and leans | A test rig with springs, a probe, and a dial gauge |
+
+The reader understands the idea because they recognise the machine. Every number the figure shows comes from the same small model that moves its parts — the readout, the motion, and the caption are all grounded in the real parameters you supply.
+
+## How Anatomy differs from diagram libraries and chart tools
+
+Anatomy is not a charting library, a diagramming tool, or a component library. It has no axes, series, or data plots. It does not generate flowcharts, architecture diagrams, or entity-relationship graphs.
+
+What it produces instead is a crafted illustration: a dense, purposeful object rendered in isometric projection from dozens of solid, shaded parts, with calm interactive motion driven by a physics model. The figure runs as pure client-side code — a Node build script writes a standalone HTML page with the kit inlined; there is nothing to deploy.
+
+<CardGroup cols={2}>
+  <Card title="Diagram libraries" icon="chart-bar" href="/introduction#how-anatomy-differs">
+    Axes, series, flowcharts, nodes and edges, generic shapes. Output is data-driven.
+  </Card>
+  <Card title="Anatomy" icon="gear" href="/introduction#the-philosophy-the-object-is-the-explanation">
+    Machines, instruments, tools, furniture. Output is a crafted physical object whose mechanism IS the concept.
+  </Card>
+</CardGroup>
+
+## The three output types
+
+All three output types share one kit, one isometric camera, and the same set of craft rules.
+
+<CardGroup cols={3}>
+  <Card title="SVG" icon="vector-square" href="/introduction#svg">
+    The core output. Solid isometric parts with four-tone shading, painted back to front, in a card with a live readout and eased motion. Ships as a standalone HTML page, a lone `.svg` file with styles embedded, or React/Next.js components.
+  </Card>
+  <Card title="SVG + WebGL" icon="fire" href="/introduction#svg-webgl">
+    For what lines cannot draw: fire, exhaust, water, caustics, lamp light, glow, steam. The shader runs in a canvas between a back and a front SVG in the figure's own isometric camera. The SVG still reads without WebGL.
+  </Card>
+  <Card title="3D (beta)" icon="cube" href="/introduction#3d-beta">
+    Parts that turn in true 3D — a dial that spins, fingers that flex, a piece that breaks off and falls. Moving parts are re-projected and re-shaded every frame by the kit's own rules. The rest of the figure stays static art.
+  </Card>
+</CardGroup>
+
+### SVG
+
+The SVG output is the foundation. The skill builds every part as an isometric solid — a prism, cylinder, rounded box, or extruded profile — shades it with four tones by facing, and paints all parts back to front in correct depth order. The result is a framed card with a figure number, title, interaction hint, and a live readout driven by a model. Examples: `dial-indicator`, `desk-computer`, `arcade-cabinet`, `test-rig`.
+
+### SVG + WebGL
+
+Some effects cannot be rendered with vector lines alone. For fire, exhaust plumes, water surfaces, caustics on a paper screen, or lamp light falling on a workbench, the skill adds a WebGL shader canvas between a back SVG layer and a front SVG layer. The shader lives in the figure's own isometric camera, so it registers exactly with the SVG geometry. If WebGL is unavailable the SVG still reads. Examples: `raptor-engine`, `ripple-tank`.
+
+### 3D (beta)
+
+<Note>
+  The 3D mode is beta. It is proved on its example (`turning-dial`) and one test figure, not yet on a production figure. A small 3D figure runs at 60 fps; the 380-part stress figure measured about 20 fps at 1440 px wide and 13–15 fps on a throttled phone profile.
+</Note>
+
+The 3D mode is for parts that move in true depth: a combination dial that spins, a robot finger that flexes, a component that detaches and falls. Each frame, convex kit primitives are re-projected and re-shaded by the kit's own rules. The rest of the figure — the bench, the stand, the surrounding objects — stays static SVG art. Example: `turning-dial`.
+
+## Compatibility
+
+Anatomy follows the open [Agent Skills](https://agentskills.io) format. The skill is written for Claude Code and also runs without modification in OpenCode and Codex.
+
+| Agent | Invoke | Notes |
+|---|---|---|
+| **Claude Code** | `/anatomy` | Picks up new skills automatically in a running session |
+| **OpenCode** | `/anatomy` | Restart OpenCode if the skill does not appear after install |
+| **Codex** | `$anatomy` | Restart Codex if the skill does not appear; browser checks need Chrome access in the sandbox |
+
+## Requirements
+
+| Requirement | Needed for | Notes |
+|---|---|---|
+| **Node.js 20.10+** | Builds, kit, checks | Built-in modules only — nothing to `npm install`. Tested byte-for-byte on Node 20.19 and 22.11. |
+| **Chrome or Chromium** | The verification checks | `capture.mjs`, `drive.mjs`, `lines.mjs`, and `turn-check.mjs` look in the standard locations on macOS, Linux, and Windows, and in Playwright's cache. Set `CHROME_PATH` for any other binary. |
+| **React 18+** | React output only | Only needed for `kit/react/`, `examples/test-rig/`, and `examples/spot-plate/`. |
+
+The kit itself has **zero npm dependencies**. Every helper uses only Node's built-in modules, so a figure's build script runs on a fresh machine with no `npm install` step.
+
+## Key limits
+
+Understanding what Anatomy is not built for will save time:
+
+- **Not a chart library.** There are no axes, series, or data plots. Numbers appear as a live readout driven by a model and as the true sizes and counts of the parts.
+- **Draws machines, instruments, tools, and furniture.** Not people and not exact maps. An idea that has no mechanism to build around will produce a weaker figure.
+- **Slow by design.** A figure takes a long session: parts list, geometry, audit, and close-ups of every joint in both themes. The Raptor engine example takes a few minutes to build; a full 3D orbit audit takes 15–20 minutes for 30 parts.
+- **Shaders need WebGL.** Without it the SVG reads, and under reduced motion every figure holds still.
+- **Never copies a reference image.** The skill takes inspiration from the finish of a real object, never from a specific image's layout.
+
+## What the skill produces
+
+A figure arrives as **source you own**:
+
+- A Node build script and the HTML page it writes, for framework-free output
+- Or, for React, geometry modules, a server component for the static art, and a client component for the motion
+
+The kit is copied into your project alongside the figure source. Everything is plain JavaScript or TypeScript — no framework beyond React for React output, no build tools beyond Node.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install the skill and get a working figure in under a minute.
+  </Card>
+  <Card title="Examples" icon="shapes" href="/examples">
+    Eight complete figures — from a 300-line dial gauge to a Raptor 2 engine with WebGL shaders.
+  </Card>
+</CardGroup>

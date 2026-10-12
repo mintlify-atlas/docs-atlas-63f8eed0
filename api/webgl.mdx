@@ -1,0 +1,231 @@
+---
+title: "gl.mjs: the WebGL layer API for Anatomy shaders"
+sidebarTitle: "gl.mjs"
+description: "Compile a GLSL fragment onto a canvas that shares the kit's camera, send uniforms per frame, and drive transitions with smooth JS envelopes."
+---
+
+`kit/gl.mjs` puts a shader effect — fire, water, caustics, glow — inside an isometric figure so it reads as part of the same object, seen through the same camera. The kit's `ISO_CSS`, the camera contract, and the layer stack are all designed around it.
+
+```js
+import { glLayer, glCamera, GLSL_ISO, smooth, burst, settle } from "../../kit/gl.mjs";
+import { kitScript, glScript } from "../../scripts/inline-kit.mjs";
+```
+
+## GLSL_ISO
+
+`glLayer` prepends `GLSL_ISO` to your fragment automatically. It provides the camera uniforms and functions that make the shader see the same camera as `iso()`.
+
+<Note>
+  Never redefine any of these in your fragment. GLSL rejects a second declaration of `rayOf`, `project`, or any other name in the prelude.
+</Note>
+
+### Camera uniforms
+
+| Uniform | What it holds |
+|---|---|
+| `uCanvas` | Canvas size in device pixels (`vec2`). |
+| `uView` | ViewBox size `[W, H]` (`vec2`). |
+| `uOrigin` | The projection origin (`vec2`). |
+| `uK` | Screen units per world unit — equal to `scaleOf(P)` (`float`). |
+| `uCam` | `(sinA, cosA, sinE, cosE)` of the azimuth and elevation (`vec4`). |
+| `uTime` | The time you pass to `draw` (`float`). |
+
+### GLSL functions
+
+| Function | What it does |
+|---|---|
+| `viewOf(gl_FragCoord.xy)` | Device pixel to viewBox point (flips y). |
+| `project(vec3 p)` | World to viewBox — identical to the kit's `iso()`. |
+| `towardViewer()` | Unit 3D view direction `(cosA·cosE, sinA·cosE, sinE)`. Every `p + t·towardViewer()` lands on the same pixel. |
+| `rayOf(vb)` | The world point under `vb` on the vertical plane through the origin that faces the camera, so `rayOf(vb) + t·towardViewer()` is the pixel's ray. Larger `t` is nearer the viewer. |
+| `pixelOf()` | World units per canvas pixel across the screen: `(uView.x / uCanvas.x) / uK`. Divide by `uCam.z` for the floor's depth direction, by `uCam.w` up a wall. |
+| `lightDir()` | The kit's light, equal to `lightOf(P)` — so shader shading agrees with SVG tones. |
+| `onFloor(vb, z)` | The world point on the horizontal plane at height `z` under this pixel. |
+| `onWallX(vb, x)` | The world point on the vertical plane `x = const` under this pixel. |
+| `onWallY(vb, y)` | The world point on the vertical plane `y = const` under this pixel. |
+| `hash12`, `hash13` | 1D/2D hashes. |
+| `noise2`, `noise3` | Value noise. |
+| `fbm2`, `fbm3` | 4-octave fractional Brownian motion. |
+| `window(x, a, b, soft)` | 1 inside `[a + soft, b − soft]`, 0 outside `[a − soft, b + soft]`, smoothstep at each bound. |
+| `tonemap(c, exposure)` | `1 − exp(−c · exposure)`. Use instead of `clamp`. |
+
+`onFloor` and the wall functions round-trip exactly with `iso()`: `project(onFloor(vb, z)) == vb`. That is what lets shader content register with SVG lines.
+
+## glCamera
+
+```js
+const camera = glCamera(P);
+// { origin: [sx, sy], k: number, cam: [sinA, cosA, sinE, cosE] }
+```
+
+Works in Node, so put it in the page `DATA`:
+
+```js
+const DATA = { W, H, camera: glCamera(P), plateR: 40, deck: [DECK.w / 2, DECK.r] };
+```
+
+## glLayer
+
+```js
+const layer = glLayer({
+  canvas,
+  fragment,
+  view: [W, H],
+  camera: glCamera(P),
+  uniforms: ["uHeat", "uPhase"],
+  fixed: { uLight: LIGHT, uDeck: [DECK.w / 2, DECK.r] },
+  extensions: ["GL_OES_standard_derivatives"],
+  maxRatio: 1.5,
+  onError: console.error,
+});
+```
+
+Compiles `GLSL_ISO + fragment` on `canvas` with a premultiplied-alpha WebGL1 context. Returns `{ gl, extensions, set(values), draw(values, time), clear() }`, or `null` when WebGL is missing or the shader fails to compile.
+
+### Options
+
+<ParamField path="canvas" type="HTMLCanvasElement" required>
+  The canvas element, covering exactly the same box as the SVGs with the same aspect ratio.
+</ParamField>
+
+<ParamField path="fragment" type="string" required>
+  Your GLSL fragment source — `GLSL_ISO` is prepended automatically. Declare your own `uniform` variables and a `main()` that writes **premultiplied** `gl_FragColor`.
+</ParamField>
+
+<ParamField path="view" type="[number, number]" required>
+  The viewBox size `[W, H]`.
+</ParamField>
+
+<ParamField path="camera" type="object" required>
+  The result of `glCamera(P)`.
+</ParamField>
+
+<ParamField path="uniforms" type="string[]" default="[]">
+  Names of the uniforms you will send per frame through `draw` or `set`.
+</ParamField>
+
+<ParamField path="fixed" type="object" default="{}">
+  `{ name: value }` for uniforms set once at creation — geometry constants, theme values. Never changes after `glLayer` returns.
+</ParamField>
+
+<ParamField path="extensions" type="string[]" default="[]">
+  GLSL extensions to request, e.g. `["GL_OES_standard_derivatives"]`. Each one the context supports is enabled and prepended as `#extension … : enable`. The returned `extensions` lists those that were actually enabled.
+</ParamField>
+
+<ParamField path="maxRatio" type="number" default="1.5">
+  Cap on `devicePixelRatio` used when sizing the canvas. Keeps mobile cost reasonable.
+</ParamField>
+
+<ParamField path="onError" type="function">
+  Called with the GLSL compile log when compilation fails. Defaults to `console.error`.
+</ParamField>
+
+### draw, set, clear
+
+| Method | What it does |
+|---|---|
+| `layer.draw(values, time)` | Fits the canvas to its CSS box × `min(maxRatio, devicePixelRatio)`, sets camera uniforms, sets `uTime = time`, sets each value in `values`, and draws one full-screen triangle. |
+| `layer.set(values)` | Sets uniforms without drawing — for a value that changes rarely. |
+| `layer.clear()` | Clears to transparent. Only acts if something was drawn. |
+
+### Uniform value types
+
+A uniform value in `fixed`, `set` or `draw` can be:
+
+- A **number** → `float`
+- An **array of length 2–4** → `vec2`, `vec3`, or `vec4`
+- An **array or Float32Array longer than 4** → sent with `uniform1fv` / `uniform2fv` / `uniform3fv` / `uniform4fv` to a declared `uniform float name[N]`, `uniform vec2 name[N]`, etc.
+
+There are no ints, matrices or samplers through these calls. For a `sampler2D`, bind a texture directly on `layer.gl` — it defaults to texture unit 0.
+
+Unknown names and uniforms the compiler optimised away are skipped silently.
+
+## JS helpers
+
+These helpers drive the uniforms that your shader reads. Import them from `kit/gl.mjs` in a module, or use them on any page that inlines `glScript()`.
+
+<Warning>
+  On a page inlining `glScript()`, never redeclare `smooth`, `burst` or `settle` — a second `const smooth` is a `SyntaxError` that kills the page.
+</Warning>
+
+### smooth
+
+```js
+const t = smooth(a, b, x); // smoothstep: 0 at a, 1 at b
+```
+
+### burst
+
+```js
+const value = burst(age, rise, fall);
+```
+
+An event envelope: smoothstep attack over `rise` seconds, then exponential decay with time constant `fall`. Returns 0 for `age ≤ 0`. Use for flashes, shocks, ignition events — never set a value to 1 in a single frame.
+
+```js
+const flash = calm ? 0 : burst(sinceIgnition, 0.08, 0.13);
+layer.draw({ uFlash: flash }, clock);
+```
+
+### settle
+
+```js
+const stillMoving = settle(state, target, dt, seconds, calm);
+// state is { x, v }, mutated in place
+```
+
+A critically damped spring on `state = { x, v }` with time constant `seconds`, four sub-steps. Snaps to the target once both error and velocity are below 1e-4. Returns `true` while still moving. Pass `calm: true` to jump straight to the target.
+
+```js
+const heat = { x: 0, v: 0 };
+function tick(now) {
+  const dt = last ? Math.min((now - last) / 1000, 1 / 30) : 1 / 60;
+  last = now;
+  const moving = settle(heat, target, dt, 0.35, still.matches);
+  if (layer) heat.x > 1e-3 ? layer.draw({ uHeat: heat.x }, clock) : layer.clear();
+  frame = visible && moving ? requestAnimationFrame(tick) : 0;
+}
+```
+
+## GLSL_TURN and glslPose (3D figures)
+
+For figures with turning groups, `kit/gl.mjs` provides two additional opt-in GLSL chunks:
+
+| Export | What it provides |
+|---|---|
+| `GLSL_TURN` | `uGroupX/Y/Z/T` uniforms; `toGroup(p)`, `toWorld(g)`, `dirToGroup(d)`, `dirToWorld(d)` for the main group; cover mask uniforms `uCoverEdge[60]`, `uCoverCount[6]`; and `coverOf(vb, soft)` — 1 inside a part painted after the effect. Defines `toWorld`: don't prepend it to a fragment that declares its own. Uses 70 uniform vectors. |
+| `glslPose(Name, prefix)` | The same four transform functions for any named group (`toDial`, `fromDial`, `dirToDial`, `dirFromDial`) over `prefixX/Y/Z/T`. Feed it `TURN.poseUniforms(controller, group, prefix)`. Use one call per group to follow several groups in one shader. |
+
+```js
+// Fragment follows a "dial" turning group
+const FRAGMENT = `
+${glslPose("Dial", "uDial")}
+void main() {
+  vec2 vb = viewOf(gl_FragCoord.xy);
+  vec3 q = toDial(onFloor(vb, FACE_Z)); // rest-world coords on the dial face
+  // …
+}`;
+```
+
+## pageHtml integration
+
+Inline the WebGL layer into a standalone page using `kitScript()` and `glScript()`:
+
+```js
+const page = k.pageHtml({
+  title,
+  theme,
+  body: `<style>${CSS}</style>${k.plateHtml({ ...card, body: stage })}`,
+  script: kitScript() + glScript() + live,
+});
+```
+
+`glScript()` returns the source of `kit/gl.mjs` with `export` stripped, for inlining after `kitScript()`. It provides `GLSL_ISO`, `glCamera`, `glLayer`, `smooth`, `burst` and `settle` as globals. It does not depend on the kit, so a page whose live code calls no kit function can inline it alone.
+
+For a 3D figure with turning groups, add `turnScript()`:
+
+```js
+script: turnScript() + glScript() + live
+```
+
+`turnScript()` inlines the full 3D runtime (`TURN`, `TURN_CSS`) with `export` stripped. Its internals are prefixed `t3`/`T3_`, so it inlines beside the kit and the WebGL layer without name collisions.

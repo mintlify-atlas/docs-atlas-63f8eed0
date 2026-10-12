@@ -1,0 +1,412 @@
+---
+title: "Parts library: ticks, springs, knurls, and motion helpers"
+sidebarTitle: "Parts Library"
+description: "Reference for lines on faces, the parts library (knurl, coil, sideSeam, ticks), and motion helpers (translateAlong, holdStill, axisVector)."
+---
+
+The parts library extends the core solid builders with higher-level drawing helpers: lines that live on solid faces, textured surface details, seam lines, springs, tick marks, and the motion utilities that make interactive figures work. These functions project correctly — they only draw what the camera can see and end exactly where the geometry requires.
+
+## Lines on faces
+
+These functions draw lines and shapes that lie on a horizontal or vertical face of a solid. They project world coordinates to screen and return SVG `d` strings.
+
+### `onTop`
+
+Projects a polyline onto a horizontal face at height `z`. All points share the same z value.
+
+```js
+const d = K.onTop(points, z, P, closed?);
+
+// Draw a groove outline on the plate top
+K.onTop(K.ringOf(K.insetPlan(PLATE, 5), 8), 0, P, true)
+```
+
+<ParamField path="points" type="Plane[]" required>
+  Floor points `[x, y]` to project at height `z`.
+</ParamField>
+
+<ParamField path="z" type="number" required>
+  Height of the face in world units.
+</ParamField>
+
+<ParamField path="P" type="Projection" required>
+  Camera projection.
+</ParamField>
+
+<ParamField path="closed" type="boolean" default="false">
+  If `true`, the path closes with a `Z` command.
+</ParamField>
+
+### `lineOnTop`
+
+One segment between two floor points on a horizontal face. A convenience wrapper around `onTop` with two points.
+
+```js
+const d = K.lineOnTop(from, to, z, P);
+
+// Example: indicator line on a knob top
+K.lineOnTop([knob[0], knob[1]], [knob[0] + 6, knob[1]], MAG_H + 4, P)
+```
+
+### `planOutline`
+
+Draws a rounded-rectangle outline on a horizontal face. Use it for grooves, inlays, panel lines, and lid seams on the top of a box.
+
+```js
+const d = K.planOutline(plan, z, P, steps?);
+
+// Example: groove inset on the plate surface
+K.planOutline(K.insetPlan(PLATE, 5), 0, P)
+```
+
+### `ring`
+
+Draws a full circle on a horizontal face. Use it for screw rings, bezels, seat rings, and any circular inlay on a top.
+
+```js
+const d = K.ring(cx, cy, r, z, P, steps?);
+
+// Example: screw ring
+K.ring(x, y, 2.2, 0, P, 16)
+```
+
+### `segment`
+
+Any 3D line segment between two world points. The most general line primitive — use it when the line is neither horizontal nor on the silhouette.
+
+```js
+const d = K.segment(from, to, P);
+// from and to are both Point3: [x, y, z]
+```
+
+### `rise`
+
+A vertical segment at floor position `at`, running from height `z0` to `z1`. A convenience wrapper for `segment` that fixes the x and y.
+
+```js
+const d = K.rise(at, z0, z1, P);
+// at is a Plane: [x, y]
+```
+
+### `pointsAt`
+
+Projects a list of 3D world points to screen coordinates. Use the resulting screen points with `dotsSvg` to draw screw heads, rivet dots, and bolt circles.
+
+```js
+const screenPts: Flat[] = K.pointsAt(points, P);
+
+// Example: screw dots on a plate
+K.dotsSvg(K.pointsAt(K.corners(PLATE, 10).map(([x, y]) => [x, y, 0]), P))
+```
+
+### `dotGrid`
+
+Projects a rectangular grid of dots at height `z`. Use it for perforated panels, grip patterns, and ventilation holes.
+
+```js
+const dots: Flat[] = K.dotGrid(x, y, columns, rows, gap, z, P);
+```
+
+<ParamField path="x" type="number" required>Starting x in world units.</ParamField>
+<ParamField path="y" type="number" required>Starting y in world units.</ParamField>
+<ParamField path="columns" type="number" required>Number of columns.</ParamField>
+<ParamField path="rows" type="number" required>Number of rows.</ParamField>
+<ParamField path="gap" type="number" required>Spacing between dots in world units.</ParamField>
+<ParamField path="z" type="number" required>Height of the grid face.</ParamField>
+
+### `topMatrix` and `sideMatrix`
+
+Returns an SVG `matrix(…)` transform string that lays text flat on a face. Pass to `faceTextSvg` or `<FaceText>`.
+
+```js
+const transform = K.topMatrix(at, z, P, along?);
+// along: 'x' (default) or 'y' — text reading direction
+
+const transform = K.sideMatrix(at, z, P, face);
+// face: 'left' or 'right'
+```
+
+<ParamField path="at" type="Plane" required>
+  Anchor point on the floor `[x, y]`.
+</ParamField>
+
+<ParamField path="z" type="number" required>
+  Height of the face.
+</ParamField>
+
+<ParamField path="P" type="Projection" required>
+  Camera projection.
+</ParamField>
+
+---
+
+## Parts library
+
+### `knurl`
+
+Draws vertical knurling lines on the visible half of a cylinder. Only draws the lines that face the camera — lines that wrap to the back are skipped.
+
+```js
+const d = K.knurl(cx, cy, r, z0, z1, count, P, inset?);
+
+// Example: knurled grip on a knob
+K.knurl(knob[0], knob[1], 6, MAG_H, MAG_H + 4, 36, P)
+```
+
+<ParamField path="cx" type="number" required>Centre x of the cylinder.</ParamField>
+<ParamField path="cy" type="number" required>Centre y of the cylinder.</ParamField>
+<ParamField path="r" type="number" required>Radius of the cylinder.</ParamField>
+<ParamField path="z0" type="number" required>Bottom of the knurled band.</ParamField>
+<ParamField path="z1" type="number" required>Top of the knurled band.</ParamField>
+<ParamField path="count" type="number" required>Number of knurl lines around the full circumference.</ParamField>
+<ParamField path="P" type="Projection" required>Camera projection.</ParamField>
+
+<ParamField path="inset" type="number" default="0.4">
+  Shortens each knurl line by this amount at each end, so lines don't poke through the top and bottom faces.
+</ParamField>
+
+**Returns** `string` — an SVG `d` string. Draw with `lineSvg(K.knurl(…), { tone: 'lo' })`.
+
+---
+
+### `sideArc`
+
+The visible front half of a horizontal circle on a cylinder side. Use it for seam lines and bands that wrap around a round body.
+
+```js
+const d = K.sideArc(cx, cy, r, z, P, steps?);
+
+// Example: band lines on a post
+K.sideArc(POST[0], POST[1], 3.2, 60, P, 16)
+```
+
+<ParamField path="cx" type="number" required>Centre x of the cylinder.</ParamField>
+<ParamField path="cy" type="number" required>Centre y.</ParamField>
+<ParamField path="r" type="number" required>Radius.</ParamField>
+<ParamField path="z" type="number" required>Height of the circle.</ParamField>
+<ParamField path="P" type="Projection" required>Camera projection.</ParamField>
+<ParamField path="steps" type="number" default="24">Points per half-arc.</ParamField>
+
+---
+
+### `sideSeam`
+
+The visible near half of a rounded plan at height `z` — the correct way to draw a weld bead, lid seam, band, or trim line on a box. Always pass the same `steps` as the enclosing `slabOf`, and draw it as the slab's `inner` option so it sits under the silhouette stroke.
+
+```js
+const d = K.sideSeam(plan, z, P, steps?);
+
+// Correct usage — drawn as inner, under the outline
+K.solidSvg(paths, { inner: K.lineSvg(K.sideSeam(plan, lidZ, P, 8), { tone: 'faint' }) })
+```
+
+<ParamField path="plan" type="Plan" required>
+  The floor plan of the enclosing `slabOf`. Must match exactly — use the same plan object.
+</ParamField>
+
+<ParamField path="z" type="number" required>
+  Height of the seam.
+</ParamField>
+
+<ParamField path="P" type="Projection" required>
+  Camera projection.
+</ParamField>
+
+<ParamField path="steps" type="number" default="8">
+  Must match the `steps` value passed to `slabOf` for the same plan.
+</ParamField>
+
+<Warning>
+Never draw a seam line by computing two points inset from the corners with `segment`. Use `sideSeam` — it wraps the rounded corners and ends exactly on the vertical silhouette edges.
+</Warning>
+
+---
+
+### `ringSeam`
+
+`sideSeam` for any floor outline (not just a `Plan`). Use it when the enclosing solid was built with `extrude(ring, …)`.
+
+```js
+const d = K.ringSeam(ring, z, P);
+// ring is the same Plane[] passed to extrude
+```
+
+---
+
+### `sideRing`
+
+A full circle on a vertical face — for bores, rod ends, lenses, and ports. Pass the axis (`'x'` or `'y'`) of the face the circle sits on.
+
+```js
+const d = K.sideRing(center, r, axis, P, steps?);
+// center is Point3: [x, y, z] of the circle centre
+// axis: 'x' for a circle on the y-z plane, 'y' for the x-z plane
+```
+
+<ParamField path="center" type="Point3" required>World point at the centre of the circle.</ParamField>
+<ParamField path="r" type="number" required>Radius.</ParamField>
+<ParamField path="axis" type='"x" | "y"' required>Which axis the circle wraps around.</ParamField>
+<ParamField path="P" type="Projection" required>Camera projection.</ParamField>
+<ParamField path="steps" type="number" default="20">Points around the full circle.</ParamField>
+
+---
+
+### `coil`
+
+Builds a spring or helical coil between two points along an axis. Returns `{ back, front }` — two SVG `d` strings for the halves that face away from and toward the viewer. Paint `back` first, then the rod the spring wraps around, then `front`.
+
+```js
+const { back, front } = K.coil(from, to, [cy, cz], r, turns, axis, P, perTurn?);
+```
+
+<ParamField path="from" type="number" required>Start position along the axis in world units.</ParamField>
+<ParamField path="to" type="number" required>End position along the axis.</ParamField>
+<ParamField path="center" type="Plane" required>`[cy, cz]` — the transverse centre of the coil, perpendicular to the axis.</ParamField>
+<ParamField path="r" type="number" required>Coil radius.</ParamField>
+<ParamField path="turns" type="number" required>Number of full turns.</ParamField>
+<ParamField path="axis" type='"x" | "y"' required>Axis the spring runs along.</ParamField>
+<ParamField path="P" type="Projection" required>Camera projection.</ParamField>
+<ParamField path="perTurn" type="number" default="16">Points per turn. Increase for large springs; 16 is smooth at most scales.</ParamField>
+
+**Returns** `{ back: string, front: string }` — paint in order: back, rod, front.
+
+---
+
+### `topTicks`
+
+Ruler tick marks on a horizontal face, growing from an edge line in the +y (or +x) direction. Returns `{ minor, major }` — draw minor ticks with `tone: 'lo'` and major with `tone: 'mid'`.
+
+```js
+const { minor, major } = K.topTicks(from, to, step, every, edge, z, [minor, major], P, axis?);
+
+// Example: ruler strip on a plate
+const ticks = K.topTicks(strip.x + 4, strip.x + strip.w - 4, 4, 5, strip.y + 0.8, 0.6, [2, 3.6], P);
+lineSvg(ticks.minor, { tone: 'lo' })
+lineSvg(ticks.major, { tone: 'mid' })
+```
+
+<ParamField path="from" type="number" required>Start of the tick range along the axis.</ParamField>
+<ParamField path="to" type="number" required>End of the tick range.</ParamField>
+<ParamField path="step" type="number" required>Spacing between ticks in world units.</ParamField>
+<ParamField path="every" type="number" required>Every Nth tick is a major tick.</ParamField>
+<ParamField path="edge" type="number" required>The floor coordinate of the base edge the ticks grow from.</ParamField>
+<ParamField path="z" type="number" required>Height of the face.</ParamField>
+<ParamField path="lengths" type="[number, number]" required>`[minorLength, majorLength]` in world units.</ParamField>
+<ParamField path="P" type="Projection" required>Camera projection.</ParamField>
+<ParamField path="axis" type='"x" | "y"' default='"x"'>The axis the ticks march along.</ParamField>
+
+**Returns** `{ minor: string, major: string }`.
+
+---
+
+### `sideTicks`
+
+Tick marks hanging down a vertical face. Same parameters as `topTicks` but takes `face` (the y-coordinate of the vertical face) and `top` (the z-coordinate to hang from).
+
+```js
+const { minor, major } = K.sideTicks(from, to, step, every, face, top, [minor, major], P, axis?);
+```
+
+---
+
+### `radialTicks`
+
+Dial and turntable ticks on a horizontal face, radiating outward from a centre point. Angle 0 points toward −y and increases clockwise as seen from above.
+
+```js
+const { minor, major } = K.radialTicks(cx, cy, r, count, every, z, [minor, major], P, from?, span?);
+```
+
+<ParamField path="cx" type="number" required>Centre x.</ParamField>
+<ParamField path="cy" type="number" required>Centre y.</ParamField>
+<ParamField path="r" type="number" required>Radius of the outer tick ends.</ParamField>
+<ParamField path="count" type="number" required>Total number of ticks around the span.</ParamField>
+<ParamField path="every" type="number" required>Every Nth tick is a major tick.</ParamField>
+<ParamField path="z" type="number" required>Height of the dial face.</ParamField>
+<ParamField path="lengths" type="[number, number]" required>`[minorLength, majorLength]` inward from `r`.</ParamField>
+<ParamField path="P" type="Projection" required>Camera projection.</ParamField>
+<ParamField path="from" type="number" default="0">Start angle in radians. 0 = pointing toward −y.</ParamField>
+<ParamField path="span" type="number" default="2π">Angular span in radians. Default is a full circle.</ParamField>
+
+**Returns** `{ minor: string, major: string }`.
+
+---
+
+## Moving things
+
+These three functions are the building blocks of interactive figures. They convert between world offsets and the screen transforms needed to move pre-built SVG groups without rebuilding their geometry.
+
+### `translateAlong`
+
+Returns an SVG `transform="translate(x y)"` string that moves a pre-built group by a world-space offset. Use it for carriages, drawers, plungers, and lifts that slide along a fixed axis.
+
+```js
+const transform = K.translateAlong(P, [dx, dy, dz]);
+
+// Example: move a carriage 10 units along the x axis
+element.setAttribute('transform', K.translateAlong(P, [slideX, 0, 0]));
+```
+
+<ParamField path="P" type="Projection" required>Camera projection.</ParamField>
+<ParamField path="offset" type="Point3" required>World-space translation `[dx, dy, dz]`.</ParamField>
+
+**Returns** `string` — `"translate(sx sy)"` where `[sx, sy]` is the screen projection of the offset.
+
+<Note>
+Rotations about the z axis cannot be done with a screen transform. Rebuild the rotating paths for each frame or step. This is inexpensive for needles, pointers, and small parts.
+</Note>
+
+---
+
+### `holdStill`
+
+Keeps every `[data-hold]` element inside a group fixed in screen space while the group moves. Call it with the same offset every time you move an item that owns a clipping path (such as a `rodOut` clip from `lathe.mjs`).
+
+```js
+K.holdStill(element, [dx, dy]);
+// element: the DOM Element of the moving group
+// [dx, dy]: the same screen offset passed to translateAlong
+```
+
+<ParamField path="element" type="Element" required>The DOM element of the moving group.</ParamField>
+<ParamField path="offset" type="Flat" required>
+  Screen translation `[dx, dy]` — the same values as the `translate()` applied to the group. `holdStill` applies the inverse transform to every `[data-hold]` descendant.
+</ParamField>
+
+---
+
+### `axisVector`
+
+Returns the screen vector of one world unit along a given axis direction. Use it to convert pointer movement (screen pixels) into world movement for drag interactions.
+
+```js
+const [sx, sy] = K.axisVector(P, [1, 0, 0]); // x-axis screen vector
+const [sx, sy] = K.axisVector(P, [0, 0, 1]); // z-axis (vertical) screen vector
+
+// Convert pointer delta to world offset
+const worldDelta = pointerDeltaX / sx;
+```
+
+<ParamField path="P" type="Projection" required>Camera projection.</ParamField>
+<ParamField path="direction" type="Point3" required>
+  A world direction vector, typically a unit vector along one axis: `[1, 0, 0]`, `[0, 1, 0]`, or `[0, 0, 1]`.
+</ParamField>
+
+**Returns** `Flat` — the screen `[sx, sy]` displacement for one world unit along that direction.
+
+### Interactive figure pattern
+
+The three motion helpers work together in a drag handler:
+
+```js
+const axisVec = K.axisVector(P, [1, 0, 0]);
+let worldX = 0;
+
+slider.addEventListener('pointermove', (event) => {
+  if (!event.buttons) return;
+  worldX += event.movementX / axisVec[0];
+  const transform = K.translateAlong(P, [worldX, 0, 0]);
+  carriage.setAttribute('transform', transform);
+  K.holdStill(carriage, [worldX * axisVec[0], worldX * axisVec[1]]);
+});
+```

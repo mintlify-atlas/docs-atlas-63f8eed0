@@ -1,0 +1,252 @@
+---
+title: "Install Anatomy for Claude Code, OpenCode, or Codex"
+sidebarTitle: "Installation"
+description: "Install the Anatomy agent skill globally or per-project using the skills CLI, git clone, or a ZIP download — for Claude Code, OpenCode, and Codex."
+---
+
+Anatomy is a standard [Agent Skill](https://agentskills.io): a folder with a `SKILL.md` at its root. The repository itself is that folder. There are three ways to get it onto your machine, and each supports all three compatible agents. Pick the method that fits your workflow.
+
+## Requirements
+
+Before installing, make sure you have what the skill needs:
+
+| Requirement | Needed for | Notes |
+|---|---|---|
+| **Node.js 20.10+** | Builds, kit, checks | Built-in modules only — nothing to `npm install`. Tested on Node 20.19 and 22.11. |
+| **Chrome or Chromium** | Verification checks | `capture.mjs`, `drive.mjs`, `lines.mjs`, `turn-check.mjs`. Set `CHROME_PATH` for a non-standard binary. |
+| **React 18+** | React output only | Only for `kit/react/`, `examples/test-rig/`, `examples/spot-plate/`. |
+
+## Install methods
+
+<Tabs>
+  <Tab title="Claude Code">
+    ### skills CLI (recommended)
+
+    Install globally for your user account:
+
+    ```sh
+    npx skills add wheresryan22/anatomy -g -a claude-code
+    ```
+
+    Installs to `~/.claude/skills/anatomy`.
+
+    Install for one project only (omit `-g`):
+
+    ```sh
+    npx skills add wheresryan22/anatomy -a claude-code
+    ```
+
+    Installs to `.claude/skills/anatomy` in the current directory. Commit this folder so your whole team gets it.
+
+    ### git clone
+
+    Clone the repository directly into the Claude Code skills folder:
+
+    ```sh
+    git clone https://github.com/wheresryan22/anatomy.git ~/.claude/skills/anatomy
+    ```
+
+    For a per-project install:
+
+    ```sh
+    git clone https://github.com/wheresryan22/anatomy.git .claude/skills/anatomy
+    ```
+
+    To update later, `git pull` inside the cloned folder.
+
+    ### Activating after install
+
+    Claude Code picks up new skills automatically in a running session. If the `skills` folder itself did not exist when your session started, run:
+
+    ```text
+    /reload-skills
+    ```
+  </Tab>
+  <Tab title="OpenCode">
+    ### skills CLI (recommended)
+
+    Install globally for your user account:
+
+    ```sh
+    npx skills add wheresryan22/anatomy -g -a opencode
+    ```
+
+    Installs to `~/.config/opencode/skills/anatomy`.
+
+    Install for one project only:
+
+    ```sh
+    npx skills add wheresryan22/anatomy -a opencode
+    ```
+
+    Installs to `.agents/skills/anatomy` in the current directory.
+
+    ### git clone
+
+    Clone the repository directly into the OpenCode skills folder:
+
+    ```sh
+    git clone https://github.com/wheresryan22/anatomy.git ~/.config/opencode/skills/anatomy
+    ```
+
+    <Note>
+      OpenCode also reads skill folders from the Claude Code locations (`~/.claude/skills/` and `.claude/skills/`) and the `.agents/skills/` folder, so a single install can serve multiple agents.
+    </Note>
+
+    ### Activating after install
+
+    OpenCode lists the skill as `/anatomy` in its TUI. Restart OpenCode if it does not appear after install.
+  </Tab>
+  <Tab title="Codex">
+    ### skills CLI (recommended)
+
+    Install globally for your user account:
+
+    ```sh
+    npx skills add wheresryan22/anatomy -g -a codex
+    ```
+
+    Installs to `~/.agents/skills/anatomy`.
+
+    Install for one project only:
+
+    ```sh
+    npx skills add wheresryan22/anatomy -a codex
+    ```
+
+    Installs to `.agents/skills/anatomy` in the current directory.
+
+    ### git clone
+
+    Clone the repository directly into the Codex skills folder:
+
+    ```sh
+    git clone https://github.com/wheresryan22/anatomy.git ~/.agents/skills/anatomy
+    ```
+
+    ### Activating after install
+
+    Codex lists skills under `/skills` and runs Anatomy with `$anatomy` (not `/anatomy`). Restart Codex if the skill does not appear after install.
+  </Tab>
+</Tabs>
+
+## Download ZIP (no git)
+
+If you prefer not to use git or the CLI, download the repository as a ZIP archive and move it into the correct skills folder.
+
+**macOS / Linux — one command for Claude Code:**
+
+```sh
+mkdir -p ~/.claude/skills/anatomy && curl -L https://github.com/wheresryan22/anatomy/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 -C ~/.claude/skills/anatomy
+```
+
+**For OpenCode:**
+
+```sh
+mkdir -p ~/.config/opencode/skills/anatomy && curl -L https://github.com/wheresryan22/anatomy/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 -C ~/.config/opencode/skills/anatomy
+```
+
+**For Codex:**
+
+```sh
+mkdir -p ~/.agents/skills/anatomy && curl -L https://github.com/wheresryan22/anatomy/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 -C ~/.agents/skills/anatomy
+```
+
+Or [download the ZIP](https://github.com/wheresryan22/anatomy/archive/refs/heads/main.zip) manually, unpack it, rename the folder from `anatomy-main` to `anatomy`, and move it into the appropriate skills folder.
+
+## Install destinations at a glance
+
+| Method | Agent | Scope | Installs to |
+|---|---|---|---|
+| `npx skills add … -g -a claude-code` | Claude Code | Global | `~/.claude/skills/anatomy` |
+| `npx skills add … -g -a opencode` | OpenCode | Global | `~/.config/opencode/skills/anatomy` |
+| `npx skills add … -g -a codex` | Codex | Global | `~/.agents/skills/anatomy` |
+| `npx skills add …` (no `-g`) | Claude Code | Project | `.claude/skills/anatomy` |
+| `npx skills add …` (no `-g`) | OpenCode / Codex | Project | `.agents/skills/anatomy` |
+| `git clone …` | Claude Code | Global | `~/.claude/skills/anatomy` |
+| `git clone …` | OpenCode | Global | `~/.config/opencode/skills/anatomy` |
+| `git clone …` | Codex | Global | `~/.agents/skills/anatomy` |
+
+## Codex sandbox and Chrome
+
+The skill verifies its own figures by starting headless Chrome, which writes a temporary profile and communicates over a local port. Codex runs commands in a sandbox, and that sandbox may block Chrome. The figure is still built; only the verification checks fail.
+
+<Accordion title="How to allow Chrome checks in Codex">
+  There are three options, in order of preference:
+
+  **Option 1 — Approve on request (default)**
+
+  When Codex asks to run a check outside the sandbox, approve it for that command. This works with the default `approval_policy = "on-request"` and requires no configuration change.
+
+  **Option 2 — Allow in config**
+
+  Add or update `~/.codex/config.toml`:
+
+  ```toml
+  approval_policy = "on-request"
+  sandbox_mode = "workspace-write"
+
+  [sandbox_workspace_write]
+  network_access = true
+  writable_roots = ["/tmp"]
+  ```
+
+  <Warning>
+    Newer Codex releases may name these settings differently. Check the config reference for your installed version.
+  </Warning>
+
+  **Option 3 — Run checks yourself**
+
+  Run the check in a normal terminal instead of through Codex:
+
+  ```sh
+  node scripts/capture.mjs page.html --out shots/page.png
+  ```
+
+  **Option 4 — Full access (use with care)**
+
+  Starting Codex with `--sandbox danger-full-access` lifts every sandbox limit for that session. Keep this for projects you fully trust.
+</Accordion>
+
+## Verify the install
+
+After installing, confirm the skill is visible in your agent:
+
+<Tabs>
+  <Tab title="Claude Code">
+    Type `/` in a Claude Code session. You should see `anatomy` in the skill list. If the `skills` folder is new, run `/reload-skills` first.
+
+    Then try:
+
+    ```text
+    /anatomy explain how a token bucket rate limiter works, interactive
+    ```
+  </Tab>
+  <Tab title="OpenCode">
+    Open OpenCode's TUI and type `/`. Anatomy should appear as `/anatomy`. If it does not, restart OpenCode.
+
+    Then try:
+
+    ```text
+    /anatomy explain how a token bucket rate limiter works, interactive
+    ```
+  </Tab>
+  <Tab title="Codex">
+    Open Codex and run `/skills`. Anatomy should appear in the list. If it does not, restart Codex.
+
+    Then try:
+
+    ```text
+    $anatomy explain how a token bucket rate limiter works, interactive
+    ```
+  </Tab>
+</Tabs>
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Write your first figure prompt and get a working page in the browser.
+  </Card>
+  <Card title="Introduction" icon="book-open" href="/introduction">
+    What Anatomy is, how it differs from diagram tools, and what each output type produces.
+  </Card>
+</CardGroup>

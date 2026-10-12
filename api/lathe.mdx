@@ -1,0 +1,205 @@
+---
+title: "lathe.mjs: round parts and pipes on any axis"
+sidebarTitle: "lathe.mjs"
+description: "Turn any meridian profile around any axis — bells, flanges, valve bodies, pipe fittings. Returns the same SolidPaths as slabOf, so solidSvg paints them."
+---
+
+`kit/iso-kit.mjs` builds prisms that stand on the floor. `kit/lathe.mjs` turns a profile around **any** axis — bells, chambers, flanges, valve bodies, pump volutes, pipe fittings, actuators lying at an angle, and connectors on a vertical face. It returns the same `SolidPaths` as `slabOf`, so `solidSvg` and `<Solid>` paint them unchanged.
+
+```js
+import * as G from "../../kit/lathe.mjs";
+```
+
+## Frames
+
+A **frame** is `{ o, a, u, v }`: an origin, the unit axis, and two unit radial directions. A point on the surface is `(s, r, angle)`: `s` along the axis from `o`, `r` from the axis, and `angle` from `u` toward `v`.
+
+<Tabs>
+  <Tab title="frameAlong">
+    ```js
+    const F = G.frameAlong([0, 0, 20], [0, 0, 1]);
+    ```
+    Picks `u` and `v` for you. Use it for pipes, bosses and flanges at any angle — you do not need angles to mean anything.
+  </Tab>
+  <Tab title="frameOf">
+    ```js
+    const F = G.frameOf([0, 0, z], [0, 0, 1], [1, 0, 0], [0, 1, 0]);
+    ```
+    Explicit radial directions, so angle 0 points along `+x`. Use it when `arcOf` angles must land on particular features.
+  </Tab>
+</Tabs>
+
+| Function | What it does |
+|---|---|
+| `frameAlong(o, a)` | A frame on axis `a` through `o`, with `u` and `v` chosen automatically. |
+| `frameOf(o, a, u, v)` | A frame with explicit radial directions. |
+| `pointOf(F, s, r, angle)` | The world point at that frame coordinate. |
+| `radialOf(F, angle)` | The outward unit direction at that angle. |
+| `tangentOf(F, angle)` | The tangential unit direction at that angle. |
+| `angleToward(F, direction)` | The angle in the frame that faces a world direction. |
+
+## Solids
+
+A **meridian** is a list of `[s, r]` points along the axis. Add a third element (`[s, r, 1]`) to mark a smooth ring — no crease line is drawn there, and any meridian with at least one smooth vertex enables smooth shading automatically.
+
+### solidOf
+
+The usual way to make a turned part. Closes a profile to the axis at both ends and picks `steps` from the largest radius.
+
+```js
+G.solidOf([[0, 12], [6, 12], [8, 9, 1], [20, 9]], F, P);
+```
+
+This example makes a turned part: a cylinder of radius 12 from s 0 to 6, a smoothly-curved shoulder down to radius 9 between s 6 and 8, then a constant shaft of radius 9 to s 20. The `1` flag on `[8, 9, 1]` marks the shoulder as smooth.
+
+<Note>
+  `solidOf` is the entry point for almost every turned part. `lathe` is the general primitive with full option control; use it only when you need `hole`, `fill: "facets"` or non-standard `rims`.
+</Note>
+
+### Full solids reference
+
+| Function | What it does |
+|---|---|
+| `lathe(meridian, F, P, options)` | The general solid of revolution. `fill: "auto"` uses the hull of the rings unless the silhouette lies more than `waist` px inside it; `"surface"` forces a true-silhouette fill; `"hull"` forces the hull; `"facets"` fills only visible facets with no outline. `hole: [s, r]` cuts a round hole into the fill and outline for a tube end. `bevel` adds a highlight inset from a closed cap. `rims` keeps or drops outline on the end rings. |
+| `solidOf(profile, F, P, options)` | Closes a profile to the axis at both ends and picks `steps` from the largest radius. The usual way to make a turned part. |
+| `bandOfProfile(profile, F, P, options)` | An open band with no caps — one stretch of a long body split for depth sorting. Prefer `bandsOf`, which cuts the whole body at once. |
+| `bandsOf(profile, cuts, F, P, options)` | One curved body cut at `s` values in `cuts` into depth-sortable bands that share one normal field. Returns `{ bands, sidesOf, radius, slope, steps, s0, s1 }`. Each band is `{ s0, s1, profile, paths, outline, seam }`. |
+| `profileCurve(profile, { slope, radius })` | The `{ s0, s1, radius(s), slope(s) }` of the curve `smooth` draws through a profile. Throws if `s` doesn't rise. |
+| `outlineOf(meridian, F, P, options)` | Only the `fill` and `outline` of `lathe`, without shading. |
+| `softOf(meridian)` | True when any vertex is marked smooth. |
+| `disc(s0, s1, r, F, P, options)` | A short cylinder on the axis: pucks, flanges, bosses, pins, plugs. |
+| `ringBand(s0, s1, rIn, rOut, F, P, options)` | An annulus with thickness: a flange or collar. |
+| `saddleOf(F, a, start, s1, P, options)` | A saddle pad: a cylinder of radius `a` seated on a curved host surface. `start(angle)` or a host cylinder radius. |
+| `prismOf(F, polygon, s0, s1, P)` | A prism of any convex polygon in the frame's `u`, `v` plane, extruded along `F.a`. |
+| `stadium(r0, r1, offset)` | The hull of two circles — for a gearbox plate joining a motor to an actuator. |
+| `sphereOf(centre, r, P, options)` | A ball with exact smooth tones. Each tone region is the projected hull of a spherical cap: four small polygons, not a turned profile. Use for rod-end bearings, tee fittings and knobs. |
+| `stepsFor(radius, least, most, scale)` | A facet count that keeps every facet about 3 px on screen. Used automatically by `solidOf`, `disc`, `ringBand` and `lathe`. |
+
+## Smooth shading
+
+Without smooth shading, every facet row gets one flat tone and a curved profile shows a staircase of tone blocks. With `smooth`, tone boundaries become the true iso-light curves.
+
+```js
+// auto (default): smooth whenever any vertex is marked [s, r, 1]
+G.solidOf([[0, 24], [8, 24], [12, 20, 1], [30, 20]], F, P);
+
+// force smooth on a profile with no smooth vertices
+G.solidOf(profile, F, P, { smooth: true });
+
+// analytic slope for a body cut into bands
+G.solidOf(profile, F, P, { smooth: { slope: (s) => bellSlope(s) } });
+
+// analytic slope AND surface (two knots is enough per band)
+G.bandsOf(profile, cuts, F, P, { radius: bell, slope: bellSlope, steps: 96, rows: 8 });
+```
+
+<Warning>
+  **Hand-typed knots are not a curve.** The monotone Hermite is only C¹: its `dr/ds` is a piecewise quadratic that plateaus at every knot. Tone bands stall and then lurch — a staircase in scallops. Any curved body larger than a fitting needs an analytic profile and `smooth: { slope }`. The audit's `wobble` check lists every profile smoothed without a `slope` whose `dr/ds` turns between its ends.
+</Warning>
+
+| Value | Behaviour |
+|---|---|
+| `"auto"` (default) | Smooth when any vertex is `[s, r, 1]`; flat otherwise. |
+| `true` | Force smooth shading using monotone Hermite through all smooth-marked runs. |
+| `{ slope }` | Analytic `dr/ds`. Profile points are joined straight — sample the analytic `r(s)` densely (20–30 knots). |
+| `{ slope, radius }` | Analytic slope **and** surface. Two knots per band is enough; `bandsOf` uses this. |
+| `false` | Force flat shading. |
+
+The `rows` option (default 6) sets the starting sampling per segment. Rows are split until every tone boundary is within 0.35 px of a chord. The result is marked `seamless`, and `solidSvg` strokes each tone region in its own colour so abutting sheets show no hairline seams.
+
+<Tip>
+  **Smooth shading is heavier.** A small turned ball with `smooth` costs about 9 KB; `sphereOf` costs under 3 KB. Use `sphereOf` for balls and keep `rows` low on small parts.
+</Tip>
+
+## Lines on round surfaces
+
+These functions draw only what faces the viewer. Pass `slope` (`dr/ds`) so a line on a cone or bell hides where the real surface turns away.
+
+| Function | What it draws |
+|---|---|
+| `arcOf(F, s, r, P, options)` | The visible arc of a ring on the surface: seams, bands, weld lines, lips. Limb angles solved exactly; each end shortened by `trim` px so round caps stay inside the outline stroke. Pass `inward: true` for an inner surface. |
+| `circleOf(F, s, r, P, steps)` | A full closed circle on a face: bore, void, face ring. |
+| `ribsOf(F, s0, s1, r, count, P, options)` | Visible axial lines: knurl, ribs or fins. `twist` makes them helical; `r1` lets them run along a cone. With `fade: [lo, hi]` returns `[{ d, alpha }]` for `fadedSvg`. |
+| `rodOut(F, from, to, r, P, options)` | A rod sliding out of a gland. Returns `{ paths, clip, from, to, stroke, reach }`. Use `<clipPath>` + `holdStill` to animate it. |
+| `spokesOf(F, s, r0, r1, count, P, options)` | Radial lines on a face: vanes and turbine blades. |
+| `dotsOf(F, s, r, count, P, options)` | Screen points of a bolt circle on the visible side, for `dotsSvg`. Pass `fade: [0.04, 0.42]` so dots carry falling opacity. |
+| `fadeOf(value, [lo, hi])` | The smoothstep both fades use. |
+| `facingOf(F, angle, P, slope)` | How much a surface at that angle faces the viewer. Positive means visible. |
+
+Draw seams **under** the outline using `inner`:
+
+```js
+solidSvg(paths, {
+  inner: lineSvg(G.arcOf(F, s, r, P), { tone: "faint" }),
+});
+```
+
+## 3D paths
+
+For laying out pipes and cables before passing to `tubePieces`.
+
+| Function | What it does |
+|---|---|
+| `fillet(points, radius, perArc, options)` | Rounds every corner of a polyline. With `P` and `tube` (pipe radius) each corner grows to `margin · tube / (0.7 · f²)` to stay visible on screen. |
+| `resample(points, spacing)` | Even re-spacing along arc length. |
+| `pathLength(points)` | Total arc length. |
+| `cut(points, from, to)` | A sub-path by arc length. |
+| `pointAlong(points, at)` | Position at an arc length — to place flanges, bands, valves. |
+| `tangentAlong(points, at)` | Direction at an arc length. |
+| `spiral(F, s, r0, r1, a0, a1, steps)` | 3D points of a widening spiral (pump volute). Feed to `tubePieces` with a radius function. |
+| `arcPoints(F, s, r, a0, a1, steps)` | 3D points around a ring: manifold, deluge ring, harness lane. |
+
+## Camera and vector helpers
+
+| Export | What it is |
+|---|---|
+| `viewOf(P)` | Unit direction to the viewer; `dot3(p, viewOf(P))` equals `depthOf(p, P)`. |
+| `lightOf(P)` | The kit's light direction. |
+| `scaleOf(P)` | Screen units per world unit. |
+| `toneOf(normal, P)` | The four-tone bucket for a normal. |
+| `bandOf(score)` | The tone bucket for a numeric score. |
+| `hullOf(points)` | Convex hull. |
+| `dot3`, `add3`, `sub3`, `mul3`, `len3`, `unit3`, `cross3`, `lerp3` | Standard 3D vector math. |
+
+## Long curved bodies in bands
+
+Cut a long body with `bandsOf` so each band depth-sorts against the pipes that wrap it. Every band shares the body's `steps`, normal field, and surface — tone curves cross every joint without a step, and `sidesOf` gives one continuous outline curve.
+
+```js
+const BELL = G.bandsOf(
+  [[3.2, bell(3.2)], [116, bell(116)]],
+  [14, 28, 44, 60, 76, 92, 106],
+  ENGINE, P,
+  { radius: bell, slope: bellSlope, steps: 96, rows: 8 }
+);
+
+BELL.bands.forEach((band, index) =>
+  put("nozzle", ex(ENGINE, (band.s0 + band.s1) / 2),
+    S(band.paths, {
+      tone: "hi",
+      inner: index === 2 ? Ln(band.seam, { tone: "faint" }) : "",
+    }),
+    { shapes: [record(A.solid(ENGINE, band.profile, { radius: bell }))] }
+  )
+);
+
+const SIDES = BELL.sidesOf(3.2, 106, { ends: "first" });
+put("nozzle", ex(ENGINE, 105), Ln(SIDES.d, { tone: "hi" }), {
+  bias: 0.2,
+  shapes: SIDES.points.map((points) => A.tube(points, 0.4 / KS)),
+});
+```
+
+<Warning>
+  Don't build bands by hand from separate `bandOfProfile` calls on two-knot chords. Each band then has its own end slopes, tones step at every joint, and the chord outline kinks.
+</Warning>
+
+## Known traps
+
+<Accordion title="Four-tone quantisation on un-smoothed profiles">
+  Four-tone quantisation follows the slope of each facet row when a body is not smoothed. Mark every curved knot smooth (`[s, r, 1]`) and the shading follows on its own. A profile of hard knots that still describes a curve needs `smooth: true` or — better — an analytic slope.
+</Accordion>
+
+<Accordion title="Smooth shading is heavier than sphereOf">
+  A small turned ball with `smooth` costs about 9 KB of SVG. `sphereOf` costs under 3 KB because it uses four hull polygons instead of a full lathe profile. Use `sphereOf` for balls and rod-end bearings, and keep `rows` low (4–6) on small parts.
+</Accordion>

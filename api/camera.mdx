@@ -1,0 +1,239 @@
+---
+title: "Camera functions: projecting world to screen in Anatomy"
+sidebarTitle: "Camera"
+description: "Complete reference for fitProjection, iso, depthOf, towardViewer, screenRise, cameraOf, and boxCorners in the Anatomy isometric kit."
+---
+
+The camera maps world coordinates `[x, y, z]` to SVG viewBox coordinates `[sx, sy]` using a parallel isometric projection. There is no perspective foreshortening — a unit at any depth projects to the same screen size. The default azimuth is 45° and the default elevation is 30°; every drawing function takes a `Projection` computed by `fitProjection`.
+
+## `fitProjection`
+
+Computes a projection that centres and fits a set of extreme points inside the viewBox. Pass every corner of the scene — the output of `boxCorners(plan, z0, z1)` and any prominent tips — so the camera scales and centres automatically.
+
+```js
+const P = K.fitProjection(
+  [...K.boxCorners(PLATE, -PLATE_H - FOOT_H, 0), [POST[0], POST[1], POST_TOP + 2]],
+  WIDTH,
+  HEIGHT,
+  { pad: 30, azimuth: 42 },
+);
+```
+
+<ParamField path="points" type="Point3[]" required>
+  Every extreme point of the scene in world coordinates. Include the eight corners of the largest bounding box (`boxCorners`) and the highest tip. The projection scales so all points fit in the viewBox with `pad` on each side.
+</ParamField>
+
+<ParamField path="width" type="number" required>
+  ViewBox width in pixels.
+</ParamField>
+
+<ParamField path="height" type="number" required>
+  ViewBox height in pixels.
+</ParamField>
+
+<ParamField path="options.pad" type="number" default="24">
+  Minimum margin in pixels on every side of the fitting box.
+</ParamField>
+
+<ParamField path="options.headroom" type="number" default="0">
+  Extra space reserved at the top of the viewBox, in pixels. Use it when a title or readout overlaps the figure.
+</ParamField>
+
+<ParamField path="options.azimuth" type="number" default="45">
+  Camera angle around the vertical axis in degrees. 45° shows both side faces of a box equally. Reduce it (30–35°) to emphasise the left face, increase it (55–60°) to emphasise the right. Keep it between 20° and 70° — values outside this range produce extreme foreshortening.
+</ParamField>
+
+<ParamField path="options.elevation" type="number" default="30">
+  Camera angle above the floor in degrees. 30° is the Anatomy default: vertical faces are wide, tops are visible. Higher values (45°) flatten tall objects; lower values (15–20°) make them appear taller.
+</ParamField>
+
+**Returns** a `Projection` object: `{ origin, scale, azimuth, elevation }`. Pass this to every other kit function as `P`.
+
+---
+
+## `iso`
+
+Projects a single world point to screen coordinates.
+
+```js
+const [sx, sy] = K.iso([x, y, z], P);
+```
+
+<ParamField path="point" type="Point3" required>
+  World point `[x, y, z]`.
+</ParamField>
+
+<ParamField path="P" type="Projection" required>
+  Camera projection from `fitProjection`.
+</ParamField>
+
+**Returns** `Flat` — `[sx, sy]` in the SVG viewBox.
+
+---
+
+## `depthOf`
+
+Returns a sort key for depth-sorting: larger values are nearer to the viewer. Sort items in ascending order so farther items are painted first.
+
+```js
+const items = [/* ... */];
+items.sort((a, b) => K.depthOf(a.at, P) - K.depthOf(b.at, P));
+```
+
+<ParamField path="point" type="Point3" required>
+  World point whose depth along the camera ray you want. Use the centre of each item.
+</ParamField>
+
+<ParamField path="P" type="Projection" required>
+  Camera projection.
+</ParamField>
+
+**Returns** `number`. Larger means nearer. Sort ascending (smallest first) to paint back to front.
+
+<Note>
+`depthOf` is a dot product of the world point with the camera's view direction. For complex scenes with many items, compute a single representative world point per item (its centre) rather than calling `depthOf` on every vertex.
+</Note>
+
+---
+
+## `towardViewer`
+
+Returns the floor direction that points toward the viewer — the `[cos a, sin a]` unit vector in the `[x, y]` floor plane. Faces whose outward normal has a positive dot product with this vector are visible from the camera.
+
+```js
+const [vx, vy] = K.towardViewer(P);
+const visible = nx * vx + ny * vy > 0;
+```
+
+<ParamField path="P" type="Projection" required>
+  Camera projection.
+</ParamField>
+
+**Returns** `Plane` — `[vx, vy]`, a unit vector on the floor pointing at the camera.
+
+---
+
+## `screenRise`
+
+Converts a world height into screen pixels. Useful for positioning labels above an object or computing whether a vertical detail will be visible at the current scale.
+
+```js
+const pixels = K.screenRise(height, P);
+```
+
+<ParamField path="h" type="number" required>
+  Height in world units.
+</ParamField>
+
+<ParamField path="P" type="Projection" required>
+  Camera projection.
+</ParamField>
+
+**Returns** `number` — how many screen pixels that world height covers vertically in the viewBox. Equal to `h * cosE * k` where `cosE` is the cosine of the elevation angle and `k` is the projection scale.
+
+---
+
+## `cameraOf`
+
+Returns the raw sines and cosines of the camera angles. Rarely needed directly — `iso`, `depthOf`, and `towardViewer` use it internally. Useful when writing your own projection maths.
+
+```js
+const { sinA, cosA, sinE, cosE, k } = K.cameraOf(P);
+```
+
+<ParamField path="P" type="Projection" required>
+  Camera projection.
+</ParamField>
+
+**Returns** `{ sinA, cosA, sinE, cosE, k }`:
+
+| Field | Value |
+|---|---|
+| `sinA` | `sin(azimuth)` |
+| `cosA` | `cos(azimuth)` |
+| `sinE` | `sin(elevation)` |
+| `cosE` | `cos(elevation)` |
+| `k` | `scale × √1.6` — the projection constant |
+
+---
+
+## `boxCorners`
+
+Returns the eight world corners of a `Plan`'s bounding box at two heights. Pass the result to `fitProjection` to ensure the whole object fits in the viewBox.
+
+```js
+const P = K.fitProjection(
+  K.boxCorners(PLATE, -PLATE_H, 0),
+  WIDTH,
+  HEIGHT,
+);
+```
+
+<ParamField path="plan" type="Plan" required>
+  The floor plan `{ x, y, w, d, r }`. Only `x`, `y`, `w`, and `d` are used; the corner radius is ignored.
+</ParamField>
+
+<ParamField path="z0" type="number" required>
+  Bottom height (world units, often negative for objects that sit below the floor).
+</ParamField>
+
+<ParamField path="z1" type="number" required>
+  Top height (world units).
+</ParamField>
+
+**Returns** `Point3[]` — eight corners, one for each combination of `{ x, x+w } × { y, y+d } × { z0, z1 }`.
+
+---
+
+## Camera setup guide
+
+A well-set camera makes every detail easy to read. Follow these guidelines:
+
+<Steps>
+  <Step title="Collect extreme points">
+    Identify the widest, deepest, tallest, and lowest points in your scene. Use `boxCorners(outerPlan, bottomZ, topZ)` for the main body and add any protruding tips separately. The more extreme points you pass, the tighter the fit.
+  </Step>
+  <Step title="Choose azimuth">
+    Start at 45°. If the figure has important detail on the left face, lower the azimuth to 30–35°. If the right face matters more, raise it to 55–60°. Avoid values outside 20–70°.
+  </Step>
+  <Step title="Choose elevation">
+    The default 30° works for most figures. Use 20–25° for tall, narrow objects where vertical faces need emphasis. Use 35–45° for flat, wide objects where the top view matters.
+  </Step>
+  <Step title="Add headroom">
+    If the card's fig label or a WebGL canvas overlaps the top of the figure, pass `headroom` equal to the overlap height in pixels. The projection shifts the scene down so nothing is clipped.
+  </Step>
+  <Step title="Increase pad for labels">
+    The default `pad: 24` is tight. For figures with text labels or tick marks that extend past the object's silhouette, raise it to 32–48.
+  </Step>
+</Steps>
+
+### Complete example
+
+This is from `examples/dial-indicator/build.mjs`:
+
+```js
+import * as K from '../../kit/iso-kit.mjs';
+
+const WIDTH = 600;
+const HEIGHT = 380;
+
+const PLATE = { x: -128, y: -64, w: 262, d: 128, r: 8 };
+const PLATE_H = 12;
+const FOOT_H = 5;
+const POST = [-98, 0];
+const POST_TOP = 122;
+const DIAL = [58, 0];
+const DIAL_R = 20;
+const DIAL_TOP = 92;
+
+const P = K.fitProjection(
+  [
+    ...K.boxCorners(PLATE, -PLATE_H - FOOT_H, 0),
+    [POST[0], POST[1], POST_TOP + 2],
+    [DIAL[0] + DIAL_R, 0, DIAL_TOP],
+  ],
+  WIDTH,
+  HEIGHT,
+  { pad: 30, azimuth: 42 },
+);
+```

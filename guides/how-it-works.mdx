@@ -1,0 +1,141 @@
+---
+title: "How Anatomy builds isometric figures from concepts"
+sidebarTitle: "How It Works"
+description: "Anatomy turns a concept into a crafted physical object — dozens of real parts, four-tone shading, and calm live motion that is the explanation."
+---
+
+Anatomy does not draw diagrams. It invents a real, well-made physical object whose mechanism *is* the concept, then builds that object from dozens of small, precise, solid parts in an isometric camera with four-tone shading, correct painter's order, and calm eased motion under the pointer and keyboard. Every number the figure shows comes from the same small model that moves its parts. The output is source you own — a Node build script and the page it writes, or React/Next.js geometry modules and components — not a black box.
+
+## The one idea that matters
+
+The central design rule is: **the object is the explanation.** Instead of boxes, arrows, and labels, Anatomy finds a recognisable physical thing whose working maps one-to-one onto the concept. The reader understands the idea because they recognise the machine.
+
+Here is how earlier figures mapped:
+
+| Concept | Object |
+|---|---|
+| One shared GPU context serving many canvases | A gantry plotter — one print head visiting 16 wells |
+| A cache key that skips work when nothing changed | A pin-tumbler lock — when every pin matches, the plug turns and nothing is redrawn |
+| Seven render targets with different bytes per texel | A chest of seven drawers, each as deep as its bytes |
+| A separable blur (49 × 49 taps vs 49 + 49) | A bed-of-nails stamp beside two combs on rails |
+| A spring that presses and leans | A test rig with springs, a probe, and a dial gauge |
+| A height profile | A profile gauge pressed against the edge |
+| Light that depends on facing | A small photo studio — key and fill lamps around a turntable |
+
+Two ways this fails, both seen in practice:
+
+- **Too abstract.** Stacked plates, floating slabs, or labelled boxes don't read as anything.
+- **Too flat and bland.** One big slab with a few lines on it has no volume, no parts, and nothing to discover.
+
+The fix for both is the same: a recognisable machine, built from many small, precise, purposeful parts.
+
+## How the source is organised
+
+When you install Anatomy with `npx skills add wheresryan22/anatomy -g -a claude-code`, the skill folder lands at `~/.claude/skills/anatomy/`. Everything Claude needs is inside it.
+
+<CardGroup cols={2}>
+  <Card title="SKILL.md" icon="file-lines" href="#skillmd">
+    The skill definition. Claude reads this file first — it sets the 10-step workflow, the craft rules in short form, and points to every other reference.
+  </Card>
+  <Card title="kit/" icon="toolbox" href="#kit">
+    The drawing library. The isometric camera, solids, lathe, tube, WebGL, 3D runtime, and React components — all zero npm dependencies.
+  </Card>
+  <Card title="references/" icon="book-open" href="#references">
+    Long-form guides Claude opens as needed: craft, the kit API, motion, React, verification, WebGL, a design walkthrough, and the 3D mode.
+  </Card>
+  <Card title="examples/" icon="shapes" href="#examples">
+    Eight complete, working figures covering every output type. Claude opens the closest one before starting any new figure.
+  </Card>
+</CardGroup>
+
+### SKILL.md
+
+`SKILL.md` is what Claude reads when you invoke `/anatomy`. It contains the complete 10-step workflow (from sizing the request to verifying the result), the concept-to-object mapping approach, the craft rules in short form, and a table of every file in `kit/`. It also tells Claude which reference documents to open at each stage. Because it is a plain Markdown file in a standard Agent Skill folder, OpenCode and Codex load it the same way.
+
+### kit/
+
+The kit is the drawing library the figures are built from. It uses only Node's built-in modules — nothing to `npm install`.
+
+| File | Purpose |
+|---|---|
+| `kit/iso-kit.ts` | The whole core: camera, solids, a parts library, an SVG string renderer, card and page builders, and `ISO_CSS`. Copy it into a TypeScript project. |
+| `kit/iso-kit.mjs` | The same core compiled to plain ESM, for Node build scripts. Import it directly. |
+| `kit/iso.css` | `ISO_CSS` written out as a standalone file. |
+| `kit/lathe.mjs` | Round parts on any axis: `lathe`, `solidOf`, `disc`, `ringBand`, `sphereOf`, `bandsOf`, `rodOut`, and more. |
+| `kit/tube.mjs` | Pipes and cables: `tubePieces` splits a route into depth-sortable chunks; `tubeSvg` draws one. |
+| `kit/gl.mjs` | The WebGL layer for shaders inside the drawing: `GLSL_ISO`, `glCamera`, `glLayer`, and the JS envelopes `smooth`, `burst`, and `settle`. |
+| `kit/turn.mjs`, `kit/turn-build.mjs`, `kit/turn-audit.mjs` | The optional 3D mode (beta): groups, live layers, convex parts with materials, and the orbit audit. |
+| `kit/audit.mjs` | Proves the geometry: nothing passes through anything, every end sits on a mount, every overlap is drawn in depth order. |
+| `kit/react/draw.tsx` | Server-safe React components: `Solid`, `Line`, `Wire`, `Dots`, `FaceText`, `IsoFigure`, `Plate`. |
+| `kit/react/live.tsx` | `"use client"` hooks: `useReadout`, `useLoop`, `useEased`, `useInView`, `useStillness`, plus `spring` and `follow`. |
+
+### references/
+
+The references are long-form guides Claude opens as needed during a build — not all at once, but at the stage where they are relevant.
+
+<Accordion title="references/craft.md">
+The look in depth: anti-patterns that got figures rejected, the full parts vocabulary with recipes, tone tables, painter's order patterns, round parts, pipes and harnesses, exploded views, screens on faces, and shaders. Claude reads this before designing any figure.
+</Accordion>
+
+<Accordion title="references/kit.md">
+The complete API with signatures and examples for every function in `iso-kit`, `lathe.mjs`, `tube.mjs`, `audit.mjs`, `gl.mjs`, and the 3D kit.
+</Accordion>
+
+<Accordion title="references/motion.md">
+Live behaviour: loops, springs, idle tours, pointer and keyboard input, accessibility, reduced motion, envelopes for one-shot events, exploded views, depth re-sorting, and arming — in vanilla JS and React.
+</Accordion>
+
+<Accordion title="references/react.md">
+The React/Next.js server/client split, element props, the large-payload key-warning trap, styles, readout, and hydration.
+</Accordion>
+
+<Accordion title="references/verify.md">
+The `capture.mjs` and `drive.mjs` commands, the review checklist (including shaders), and common faults.
+</Accordion>
+
+<Accordion title="references/webgl.md">
+Shaders inside the drawing: when a shader earns its place, the three-layer stack, the camera contract, the craft rules with the bugs that taught them, the light theme, and how to verify shaders.
+</Accordion>
+
+<Accordion title="references/walkthrough.md">
+How the test-rig figure was designed step by step, from concept to code — the closest thing to a worked example of the full design process.
+</Accordion>
+
+<Accordion title="references/3d.md">
+The optional 3D mode: groups and poses, live layers, convex parts and their rules, materials, free groups, hinge chains, painter's order, static clutter around a turntable, shaders that follow the turn, the orbit audit, browser checks, performance, and limits.
+</Accordion>
+
+<Accordion title="references/publish.md">
+Sharing a finished figure in the community gallery with `scripts/publish.mjs` — only when you ask; nothing is pushed automatically.
+</Accordion>
+
+### examples/
+
+Eight complete figures ship with the skill, covering every combination of output type and complexity. Claude opens the closest one before starting any new figure.
+
+| Example | What it shows |
+|---|---|
+| `dial-indicator/` | The smallest figure (~300 lines): a dial gauge on a stand over a carriage of gauge blocks. |
+| `desk-computer/` | Framework-free SVG: a 1984-style desk computer with a keyboard. ~85 solids. |
+| `arcade-cabinet/` | A Hero figure: a cabinet with its side panel off, a coin chute, 240 solids, 15 cables. |
+| `raptor-engine/` | The quality bar for shader work: a Raptor 2 engine with WebGL plume, shock, splash, and steam. |
+| `ripple-tank/` | Two WebGL layers (caustics and reflections) driven by a pure dispersion and optics model. |
+| `test-rig/` | A production React/Next.js figure: 53 solids, a glass button, a probe, and a dial gauge. |
+| `spot-plate/` | Six pairs of glass drops that morph together, each pair from one distance field. |
+| `turning-dial/` | The 3D mode (beta): a combination dial that turns in true 3D with a robot hand. |
+
+### scripts/
+
+The scripts directory contains headless Chrome verification tools that Claude runs to check its own work. These are not part of the build — they run after, and Claude reads every PNG they produce.
+
+| Script | Purpose |
+|---|---|
+| `scripts/capture.mjs` | Desktop and phone screenshots, close-ups, and console checks with WebGL on. |
+| `scripts/drive.mjs` | Scripted sessions: move, click, key, slow motion, wait-until, eval, contact sheets that catch pops. |
+| `scripts/lines.mjs` | The line-end check: every texture line must end on a stroke, a dot, or an outline. Exits 1 on any failure. |
+| `scripts/inline-kit.mjs` | `kitScript()`, `glScript()`, and `turnScript()` return the kit as source to inline into a standalone page. |
+| `scripts/turn-check.mjs` | 3D figures: fidelity, depth order, pixel pops, line ends at 24 angles, and frame timing. |
+
+## A figure arrives as source you own
+
+The result of an Anatomy session is not a generated image or a component you can't edit. It is a Node build script (or React modules) that imports from `kit/` and produces an HTML page. You can read every path, change every part, add a new mechanism, or adjust the model that drives the motion — because you have the source.

@@ -1,0 +1,210 @@
+---
+title: "React and Next.js integration with Anatomy figures"
+sidebarTitle: "React & Next.js"
+description: "Use Anatomy's kit/react/ components to embed isometric figures in Next.js: static art in server components, motion hooks in client components."
+---
+
+Anatomy figures work in Next.js by splitting the static art — all the computed SVG paths — into a server component, and keeping only the live motion loop, pointer handlers, and readout in a client component. The kit's `draw.tsx` exports are server-safe; `live.tsx` is client-only. The result is that no geometry code ships to the browser unless a moving part needs to rebuild per frame.
+
+## When to use React output vs standalone HTML
+
+Use standalone HTML (the default skill output) when the figure lives on its own page or in a documentation site that embeds raw HTML. Use the React output when the figure is one component among others in a Next.js app, you need SSR for the static art, or you want to share kit tokens and styles through a global CSS import.
+
+<Note>
+  React and Next.js figures cannot be submitted to the community gallery. The gallery accepts only plain HTML figures built from a standalone build script.
+</Note>
+
+## Copying the kit into your project
+
+Copy `kit/` from the skill into your project, for example as `components/iso/`. Rewrite the imports inside the copied files from `../../kit/iso-kit.mjs` to `./kit` (or whichever local path you choose). Then import `iso.css` once, globally or per-figure.
+
+A complete figure lives in its own folder:
+
+```
+components/figures/rig/
+  model.ts       pure model: numbers, springs, readout text (no DOM)
+  view.ts        world layout constants, projection P, helpers
+  geometry.ts    every static path, computed once at module load
+  frame.ts       paths for parts that change shape per frame
+  art.tsx        server component: static parts as JSX constants
+  live.tsx       "use client": refs, loop, pointer, keyboard, aria
+  rig.css        scoped tokens and styles
+  figure.tsx     <Plate fig title hint readout keys caption><RigArt /></Plate>
+```
+
+`examples/test-rig/` and `examples/spot-plate/` follow this layout.
+
+## The server/client split
+
+<Steps>
+  <Step title="Write geometry on the server">
+    `geometry.ts` and `view.ts` are pure TypeScript with no DOM. They run on the server at build time and the client receives finished path strings. `frame.ts` (paths for parts that change shape) is imported by `live.tsx` and does ship to the client.
+  </Step>
+  <Step title="Build static art in art.tsx">
+    `art.tsx` is a server component. It assembles static parts as JSX using `draw.tsx` components and passes them as **element props** to the live component:
+    ```tsx
+    // art.tsx  (no "use client")
+    import { Solid, Line, Wire, IsoFigure } from "@/components/iso/react/draw";
+    import { BASE_ART, RAIL_ART } from "./geometry";
+
+    export function RigArt() {
+      const base = <g key="base"><Solid paths={BASE_ART.slab} tone="mid" /></g>;
+      const rail = <g key="rail"><Line paths={RAIL_ART} tone="lo" /></g>;
+      return <RigLive base={base} rail={rail} />;
+    }
+    ```
+  </Step>
+  <Step title="Receive elements in the client component">
+    `live.tsx` is a client component. It places the pre-rendered elements in painter's order and wraps moving ones in `<g ref>`:
+    ```tsx
+    "use client";
+    import { useLoop, useEased, useInView } from "@/components/iso/react/live";
+
+    export function RigLive({ base, rail }: { base: React.ReactNode; rail: React.ReactNode }) {
+      const stageRef = useRef<SVGSVGElement>(null);
+      const inView = useInView(stageRef);
+      const value = useEased(target, { seconds: 0.4 });
+
+      useLoop(() => {
+        // animate needle, readout, etc.
+      }, inView);
+
+      return (
+        <svg ref={stageRef} className="iso-svg" viewBox={`0 0 ${W} ${H}`}>
+          {base}
+          <g ref={railRef}>{rail}</g>
+          {/* … */}
+        </svg>
+      );
+    }
+    ```
+  </Step>
+</Steps>
+
+## draw.tsx server-safe components
+
+These components live in `kit/react/draw.tsx` and are safe to use in server components.
+
+| Component | What it renders |
+|-----------|-----------------|
+| `<Solid paths tone crease lit />` | A filled face group with the correct tone classes. |
+| `<Line paths tone />` | Stroke-only paths (seams, grooves, rules). |
+| `<Wire paths />` | Fine guide lines and wires. |
+| `<Dots positions tone size />` | A row of dot accents. |
+| `<FaceText text x y size />` | Engraved label text positioned in viewBox coordinates. |
+| `<IsoFigure width height label body />` | Wraps content in a `role="img"` SVG with the figure label. |
+| `<Plate fig title hint readout caption />` | The card shell with corner labels and caption. |
+
+## live.tsx client hooks
+
+These hooks live in `kit/react/live.tsx` and must be used inside `"use client"` components.
+
+| Hook | What it does |
+|------|--------------|
+| `useReadout(anchor)` | Finds the nearest `[data-readout]` from `anchor` and returns a `say(text)` function that writes it without re-rendering. |
+| `useLoop(callback, active)` | Runs `callback` in a `requestAnimationFrame` loop while `active` is true. Stops when the component unmounts. |
+| `useEased(target, options)` | A critically-damped spring value. `options.seconds` is the settling time. |
+| `useInView(ref, options?)` | Returns `true` while the element is near the viewport. Stops animation offscreen. |
+| `useStillness()` | Returns `true` when `prefers-reduced-motion` is set. |
+| `follow(ref, getValue)` | Writes a CSS `transform` to `ref.current` each frame without re-rendering. |
+| `spring(state, target, dt, seconds)` | Integrate one step of a critically-damped spring (call inside `useLoop`). |
+
+## The element-props pattern
+
+The most important pattern in the React integration is passing pre-rendered elements as props from the server component to the live component. The live component places them without re-rendering the geometry.
+
+```tsx
+// art.tsx
+const dial = (
+  <React.Fragment key="dial">
+    <Solid paths={DIAL_FACE} tone="hi" />
+    <Line paths={DIAL_TICKS} tone="lo" />
+  </React.Fragment>
+);
+
+return <RigLive dial={dial} />;
+
+// live.tsx
+export function RigLive({ dial }: { dial: React.ReactNode }) {
+  const dialRef = useRef<SVGGElement>(null);
+  // rotate dialRef.current with follow() each frame
+  return (
+    <svg …>
+      <g ref={dialRef}>{dial}</g>
+    </svg>
+  );
+}
+```
+
+Only `frame.ts` (path-rebuilding functions) ships to the client — geometry constants stay on the server.
+
+## The large-payload key-warning trap
+
+On a large page the server payload is large, and React streams some element props as deferred (lazy) chunks. When the lazy resolves to an element without a key, React logs "Each child in a list should have a unique key", pointing at your live component or `IsoFigure`. The same figure on a small test page logs nothing — so checking one figure at a time misses this.
+
+<Warning>
+  Always do both of the following from the start; fixing them later after the page is built is painful.
+</Warning>
+
+**Fix 1:** Give the root of every element prop a stable key:
+
+```tsx
+// Correct — stable key on each element prop
+const base = <g key="base">…</g>;
+const dial = <React.Fragment key="dial">…</React.Fragment>;
+```
+
+**Fix 2:** Keep `"use client"` components out of server-built art. Every client component element inside a server tree becomes a lazy reference, which makes all of its ancestors lazy too. If parts of the art need interactivity (hover-to-highlight), make them plain `<g data-part="…">` and handle events with delegation in the live component.
+
+Any array built with `.map` needs keys as usual.
+
+## Styles and tokens
+
+```tsx
+// Import once, globally or in the figure
+import "@/components/iso/iso.css";
+
+// Add className="iso" on a wrapper and data-theme for the light theme
+<div className="iso" data-theme="light">
+  <RigArt />
+</div>
+```
+
+Scope per-figure tokens to the figure's class:
+
+```css
+/* rig.css */
+.rig {
+  --rig-glass-top: #e8f4f8;
+  --rig-needle-hue: 220;
+}
+```
+
+Do not put figure tokens on `:root`.
+
+## Hydration
+
+Render the rest pose on the server and on the client's first render. Start motion only inside effects. Do not read `window` while rendering. `asksForStillness()` is safe because it is only called inside effects and loops.
+
+```tsx
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { useStillness } from "@/components/iso/react/live";
+
+export function RigLive({ base }) {
+  const [started, setStarted] = useState(false);
+  const still = useStillness();
+
+  useEffect(() => {
+    // safe: runs only in the browser, after hydration
+    setStarted(true);
+  }, []);
+
+  // render rest pose identically on server and first client render
+  return (
+    <svg className="iso-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={LABEL}>
+      {base}
+    </svg>
+  );
+}
+```
